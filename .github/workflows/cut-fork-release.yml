@@ -36,6 +36,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  GH_REPO: ${{ github.repository }}
   GH_TOKEN: ${{ secrets.SYNC_PAT || secrets.GITHUB_TOKEN }}
   FEATURE_BRANCH: allow-rebuilding-with-image-or-user-data
 
