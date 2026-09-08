@@ -1,0 +1,109 @@
+name: Cut fork release
+
+# Watches hetznercloud/terraform-provider-hcloud's tags. When upstream's
+# newest release tag isn't mirrored here yet, merges this fork's feature
+# branch ($FEATURE_BRANCH) onto that tag and pushes the result as a tag
+# with the SAME name, e.g. upstream v1.69.0 -> fork v1.69.0 (they're
+# different commits in different repos, published under different
+# Terraform Registry provider addresses - see MAINTAINING.md). Pushing
+# that tag triggers .github/workflows/release.yml (GoReleaser), which
+# builds and publishes it exactly like an upstream release, just with the
+# fork's feature merged in.
+#
+# Only ever targets the single newest upstream tag - if a run is missed
+# and upstream cuts several releases in between, the intermediate ones
+# are skipped rather than all being built and released at once. Run
+# workflow_dispatch by hand for one of those if you want it mirrored too.
+#
+# GitHub Actions can't watch another repo's tags directly, so this polls
+# on a schedule instead. A merge conflict opens an issue rather than
+# failing silently. See scripts/cut-fork-tag.sh for the per-tag logic and
+# MAINTAINING.md for the manual equivalent and the versioning scheme.
+
+on:
+  schedule:
+    # Every day at 00:15 UTC - offset from sync-upstream.yml's :00 so
+    # main is refreshed first.
+    - cron: "15 0 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: cut-fork-release
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ secrets.SYNC_PAT || secrets.GITHUB_TOKEN }}
+  FEATURE_BRANCH: allow-rebuilding-with-image-or-user-data
+
+jobs:
+  cut:
+    runs-on: ubuntu-latest
+    # Never run this on upstream itself if the workflow file ever ends up
+    # there via a PR from this fork.
+    if: github.repository != 'hetznercloud/terraform-provider-hcloud'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          token: ${{ env.GH_TOKEN }}
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch upstream tags and the feature branch
+        run: |
+          git remote add upstream https://github.com/hetznercloud/terraform-provider-hcloud.git 2>/dev/null || true
+          # Fetched into a separate ref namespace, not refs/tags - fork
+          # tags are now plain vX.Y.Z too (just with a big offset patch
+          # number), so fetching both remotes' tags into the same
+          # refs/tags namespace would risk name collisions and would make
+          # it impossible to tell "real upstream tag" apart from "our own
+          # fork tag" below.
+          git fetch upstream '+refs/tags/*:refs/upstream-tags/*' --quiet
+          git fetch origin --tags --quiet
+          git fetch origin "$FEATURE_BRANCH" --quiet
+
+      - name: Find upstream tags without a fork release yet
+        run: |
+          all_base_tags=$(git for-each-ref 'refs/upstream-tags/v*' --format='%(refname:short)' \
+            | sed -E 's#^upstream-tags/##' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
+
+          # Fork tags now share their base upstream tag's exact name, so
+          # a fork tag that already exists locally (fetched from origin
+          # above) means that upstream tag has already been released.
+          existing_fork_tags=$(git for-each-ref 'refs/tags/v*' --format='%(refname:short)' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V)
+          newest_forked=$(echo "$existing_fork_tags" | tail -1)
+          latest_upstream=$(echo "$all_base_tags" | tail -1)
+
+          # Only ever release the single newest upstream tag - never
+          # backfill intermediate ones we missed (e.g. a workflow outage
+          # spanning several upstream releases). Keeps this from building
+          # every skipped version in one run.
+          if [[ -n "$latest_upstream" && "$latest_upstream" != "$newest_forked" ]]; then
+            candidates=$latest_upstream
+          else
+            candidates=""
+          fi
+
+          if [[ -z "$candidates" ]]; then
+            echo "No new upstream tags to release."
+          fi
+
+          printf '%s\n' "$candidates" >candidates.txt
+
+      - name: Cut a fork release for each new upstream tag
+        run: |
+          while IFS= read -r tag; do
+            [[ -z "$tag" ]] && continue
+            echo "::group::$tag"
+            scripts/cut-fork-tag.sh "$tag"
+            echo "::endgroup::"
+          done <candidates.txt
