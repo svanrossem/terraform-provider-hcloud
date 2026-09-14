@@ -62,12 +62,16 @@ jobs:
         run: |
           git remote add upstream https://github.com/hetznercloud/terraform-provider-hcloud.git 2>/dev/null || true
           # Fetched into a separate ref namespace, not refs/tags - fork
-          # tags are now plain vX.Y.Z too (just with a big offset patch
-          # number), so fetching both remotes' tags into the same
-          # refs/tags namespace would risk name collisions and would make
-          # it impossible to tell "real upstream tag" apart from "our own
-          # fork tag" below.
-          git fetch upstream '+refs/tags/*:refs/upstream-tags/*' --quiet
+          # tags are now plain vX.Y.Z too, so fetching both remotes' tags
+          # into the same refs/tags namespace would risk name collisions
+          # and would make it impossible to tell "real upstream tag" apart
+          # from "our own fork tag" below. --no-tags is required here:
+          # without it, git's automatic tag-following auto-imports every
+          # fetched tag into refs/tags/* too, REGARDLESS of the explicit
+          # destination refspec - silently defeating the isolation above
+          # (verified: it made every upstream tag look like an
+          # already-cut fork tag, so this workflow never cut a release).
+          git fetch upstream '+refs/tags/*:refs/upstream-tags/*' --no-tags --quiet
           git fetch origin --tags --quiet
           git fetch origin "$FEATURE_BRANCH" --quiet
 
