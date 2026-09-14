@@ -17,7 +17,15 @@
 # with the fork's feature merged in.
 #
 # On a merge conflict, opens an issue instead of failing loudly, and
-# skips. Idempotent: safe to rerun - does nothing if the tag already
+# skips. The issue is assigned to GitHub Copilot coding agent (--assignee
+# @copilot) so it can attempt the resolution on its own - this requires
+# Copilot coding agent to be enabled for this repo/account and GH_TOKEN to
+# be a real user PAT (Copilot billing needs a human account; a
+# GITHUB_TOKEN or GitHub App token is rejected for the assignment). If
+# assignment fails, a non-zero exit here surfaces as a failed workflow
+# run - check the repo's issues to see whether the issue itself still got
+# created before assuming it didn't.
+# Idempotent: safe to rerun - does nothing if the tag already
 # exists (re-cutting one, e.g. after resolving a conflict by hand,
 # requires explicitly deleting/force-pushing it first - see
 # MAINTAINING.md).
@@ -87,7 +95,7 @@ if ! git merge "origin/$FEATURE_BRANCH" --no-edit; then
     echo '```'
   } >"$body_file"
 
-  gh issue create --title "$issue_title" --body-file "$body_file"
+  gh issue create --title "$issue_title" --body-file "$body_file" --assignee @copilot
   exit 0
 fi
 

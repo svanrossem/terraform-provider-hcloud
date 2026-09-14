@@ -60,7 +60,9 @@ upstream tag rather than backfilling this fork's entire release history.
 The merge commit is also pushed to a rolling `fork-release` branch so
 it's inspectable on GitHub, but that branch is force-pushed on every run
 - only the tags are permanent. A merge conflict opens an issue instead of
-failing silently; resolve it manually per the issue's instructions.
+failing silently, assigned to GitHub Copilot coding agent (`@copilot`) so
+it can attempt the resolution on its own; otherwise resolve it manually
+per the issue's instructions.
 
 Pushing the fork tag triggers `.github/workflows/release.yml` (GoReleaser)
 exactly like a real upstream tag would, publishing a GitHub Release with
@@ -126,7 +128,11 @@ history).
   never trigger `release.yml`/GoReleaser. Add a personal access token
   (classic, `repo` scope, or a fine-grained token scoped to this repo with
   contents/pull-requests/issues read-write) as the `SYNC_PAT` secret so
-  tag pushes actually trigger releases.
+  tag pushes actually trigger releases. This must be a real user PAT
+  belonging to an account with Copilot coding agent access - GitHub
+  rejects assigning issues to `@copilot` (see above) with the default
+  `GITHUB_TOKEN` or a GitHub App token, since Copilot usage is billed to a
+  human account.
 - **GPG signing key**: generate a key dedicated to this fork and add it as
   the `GPG_PRIVATE_KEY` / `GPG_PASSPHRASE` secrets on this repo (Settings →
   Secrets and variables → Actions). Upstream's key is Hetzner's and isn't
