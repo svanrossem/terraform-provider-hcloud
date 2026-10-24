@@ -166,3 +166,18 @@ func NewBlueprint(t *testing.T) *Blueprint {
 
 	return b
 }
+
+// ARebuildData defines the fields for the "testdata/a/hcloud_server_rebuild"
+// template.
+type ARebuildData struct {
+	testtemplate.DataCommon
+
+	ServerID string
+	Image    string
+	UserData string
+}
+
+// TFID returns the action identifier.
+func (d *ARebuildData) TFID() string {
+	return fmt.Sprintf("action.%s.%s", RebuildActionType, d.RName())
+}
