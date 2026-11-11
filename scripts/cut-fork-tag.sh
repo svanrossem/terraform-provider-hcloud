@@ -16,15 +16,17 @@
 # which builds and publishes it exactly like an upstream release, just
 # with the fork's feature merged in.
 #
-# On a merge conflict, opens an issue instead of failing loudly, and
-# skips. The issue is assigned to GitHub Copilot coding agent (--assignee
-# @copilot) so it can attempt the resolution on its own - this requires
-# Copilot coding agent to be enabled for this repo/account and GH_TOKEN to
-# be a real user PAT (Copilot billing needs a human account; a
-# GITHUB_TOKEN or GitHub App token is rejected for the assignment). If
-# assignment fails, a non-zero exit here surfaces as a failed workflow
-# run - check the repo's issues to see whether the issue itself still got
-# created before assuming it didn't.
+# On a merge conflict, cuts nothing. Instead it merges the upstream tag
+# INTO $FEATURE_BRANCH on a "resolve/<tag>" branch and commits that merge
+# with the conflict markers still in it - so the history is a real
+# two-parent merge no matter who fixes the files - opens a PR for it
+# against $FEATURE_BRANCH and asks GitHub Copilot coding agent (@copilot)
+# to resolve the markers. .github/workflows/copilot-autopilot.yml then
+# drives that PR to a merge without a human and reruns this workflow; with
+# the tag now in $FEATURE_BRANCH the merge is clean and the release is
+# cut. GH_TOKEN must be a real user PAT with Copilot coding agent access:
+# Copilot ignores @copilot mentions from bots and GitHub App tokens.
+#
 # Idempotent: safe to rerun - does nothing if the tag already
 # exists (re-cutting one, e.g. after resolving a conflict by hand,
 # requires explicitly deleting/force-pushing it first - see
@@ -53,16 +55,16 @@ if [[ ! "$upstream_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
-if git rev-parse -q --verify "refs/upstream-tags/$upstream_tag" >/dev/null; then
+if git rev-parse -q --verify "refs/upstream-tags/$upstream_tag" > /dev/null; then
   base_ref="refs/upstream-tags/$upstream_tag"
-elif git rev-parse -q --verify "refs/tags/$upstream_tag" >/dev/null; then
+elif git rev-parse -q --verify "refs/tags/$upstream_tag" > /dev/null; then
   base_ref="refs/tags/$upstream_tag"
 else
   echo "error: tag $upstream_tag not found (did you fetch upstream --tags?)" >&2
   exit 1
 fi
 
-if git rev-parse -q --verify "refs/tags/$fork_tag" >/dev/null; then
+if git rev-parse -q --verify "refs/tags/$fork_tag" > /dev/null; then
   echo "$fork_tag already exists, skipping."
   exit 0
 fi
@@ -72,30 +74,52 @@ git checkout -B "$release_branch" "$base_ref"
 if ! git merge "origin/$FEATURE_BRANCH" --no-edit; then
   git merge --abort
 
-  issue_title="Manual fork release needed: $FEATURE_BRANCH conflicts with $upstream_tag"
-  existing_issue=$(gh issue list --state open --search "in:title \"$issue_title\"" --json number --jq 'length')
-  if [[ "$existing_issue" != "0" ]]; then
-    echo "An issue is already open for the $upstream_tag conflict, skipping."
+  resolve_branch="resolve/$upstream_tag"
+  existing_pr=$(gh pr list --state open --head "$resolve_branch" --json number --jq 'length')
+  if [[ "$existing_pr" != "0" ]]; then
+    echo "A resolve PR is already open for $upstream_tag, skipping."
     exit 0
   fi
 
+  # Merge the tag INTO the feature branch (the opposite direction of the
+  # cut above), so that once this lands the cut is a clean fast-forward.
+  # Expected to conflict - that's why we're here.
+  git checkout -B "$resolve_branch" "origin/$FEATURE_BRANCH"
+  git merge --no-ff --no-commit "$base_ref" || true
+  conflicted=$(git diff --name-only --diff-filter=U)
+  git add -u  # not -A: the workflow leaves candidates.txt in the worktree
+  git commit --no-verify \
+    -m "Merge upstream $upstream_tag into $FEATURE_BRANCH" \
+    -m "Committed with unresolved conflict markers, to be resolved in the PR."
+  git push origin "$resolve_branch" --force
+
   body_file=$(mktemp)
   {
-    echo "Automated merge of \`$FEATURE_BRANCH\` onto upstream tag \`$upstream_tag\` hit a merge conflict - could not cut a fork release automatically."
+    echo "Cutting the fork release for upstream \`$upstream_tag\` conflicted with \`$FEATURE_BRANCH\`."
     echo
-    echo 'Please resolve and cut the release manually:'
-    echo '```sh'
-    echo "git fetch upstream --tags && git fetch origin $FEATURE_BRANCH"
-    echo "git checkout -B $release_branch $upstream_tag"
-    echo "git merge origin/$FEATURE_BRANCH"
-    echo '# resolve conflicts, then:'
-    echo "git push origin $release_branch --force-with-lease"
-    echo "git tag -a ${fork_tag} -m \"Fork release of upstream ${upstream_tag}, includes ${FEATURE_BRANCH}\""
-    echo "git push origin ${fork_tag}"
-    echo '```'
-  } >"$body_file"
+    echo "This branch is a real merge of \`$upstream_tag\` into \`$FEATURE_BRANCH\`, committed with the conflict markers still in it. Once they're resolved and this PR is merged, \`cut-fork-release.yml\` cuts the release cleanly."
+    echo
+    echo 'Conflicted files:'
+    echo
+    while IFS= read -r file; do echo "- \`$file\`"; done <<< "$conflicted"
+    echo
+    echo "Driven to merge without a human by \`.github/workflows/copilot-autopilot.yml\`."
+  } > "$body_file"
 
-  gh issue create --title "$issue_title" --body-file "$body_file" --assignee @copilot
+  pr_url=$(gh pr create \
+    --base "$FEATURE_BRANCH" \
+    --head "$resolve_branch" \
+    --title "Resolve conflicts: merge upstream $upstream_tag into $FEATURE_BRANCH" \
+    --body-file "$body_file")
+
+  # Must be posted with a user PAT - Copilot ignores mentions from bots.
+  # The marker lets copilot-autopilot.yml count its nudges.
+  nudge_file=$(mktemp)
+  {
+    echo '<!-- copilot-autopilot -->'
+    echo "@copilot Resolve every merge conflict marker in this branch by editing the files. Keep upstream's changes AND this fork's feature (the server rebuild action). Do not rebase, squash, reset or force-push: the existing merge commit must stay in the history. Make sure \`go build ./...\` and \`go test ./...\` pass."
+  } > "$nudge_file"
+  gh pr comment "$pr_url" --body-file "$nudge_file"
   exit 0
 fi
 

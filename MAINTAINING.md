@@ -58,11 +58,34 @@ On first run (no fork tags exist yet), it only bootstraps from the latest
 upstream tag rather than backfilling this fork's entire release history.
 
 The merge commit is also pushed to a rolling `fork-release` branch so
-it's inspectable on GitHub, but that branch is force-pushed on every run
-- only the tags are permanent. A merge conflict opens an issue instead of
-failing silently, assigned to GitHub Copilot coding agent (`@copilot`) so
-it can attempt the resolution on its own; otherwise resolve it manually
-per the issue's instructions.
+it's inspectable on GitHub, but that branch is force-pushed on every run --
+only the tags are permanent.
+
+### Merge conflicts: resolved by Copilot, no human needed
+
+A merge conflict doesn't fail or open an issue. Instead
+`scripts/cut-fork-tag.sh` merges the upstream tag **into** the feature
+branch on a `resolve/vX.Y.Z` branch, commits that merge with the conflict
+markers still in it (so the history is always a real merge, whoever fixes
+the files), opens a PR against the feature branch and asks `@copilot` to
+resolve the markers.
+
+`.github/workflows/copilot-autopilot.yml` (every 15 minutes) then drives
+each such PR to a merge without a human: it waits for Copilot to finish,
+marks the PR ready, waits for CI (`build`, `pre-commit`, `lint`, `unit` -
+not `e2e`, which needs an `HCLOUD_TOKEN` this fork doesn't have), requests
+a Copilot code review, and asks `@copilot` to fix whatever is left
+(markers, failing CI, review comments). Once it's clean it merges the PR
+and reruns `cut-fork-release.yml`, which now merges cleanly and cuts the
+release. See `scripts/copilot-autopilot.sh` for the exact steps.
+
+After 3 rounds of asking Copilot (`MAX_ROUNDS`), remaining review comments
+no longer block the merge. Red CI or leftover markers do, since they'd
+ship a broken release. The PR then gets the `autopilot-stuck` label and is
+left for you: fix it by hand, or remove the label to let it retry.
+
+To resolve one by hand instead, push the fix to the `resolve/vX.Y.Z`
+branch (keeping its merge commit, so no rebase or squash) and merge the PR.
 
 Pushing the fork tag triggers `.github/workflows/release.yml` (GoReleaser)
 exactly like a real upstream tag would, publishing a GitHub Release with
@@ -76,8 +99,8 @@ there if that changes.
 Fork tags reuse the exact upstream tag name they're built from, e.g.
 upstream `v1.69.0` becomes fork `v1.69.0` too. This is safe because the
 two live in different repos and are published under different Terraform
-Registry provider addresses (`hetznercloud/hcloud` vs. `svanrossem/hcloud`)
-- there's no registry or tooling that would ever compare them directly,
+Registry provider addresses (`hetznercloud/hcloud` vs. `svanrossem/hcloud`) --
+there's no registry or tooling that would ever compare them directly,
 even though the commits (and therefore checksums) differ.
 
 The trade-off: because the name alone doesn't distinguish "the fork's
@@ -129,10 +152,15 @@ history).
   (classic, `repo` scope, or a fine-grained token scoped to this repo with
   contents/pull-requests/issues read-write) as the `SYNC_PAT` secret so
   tag pushes actually trigger releases. This must be a real user PAT
-  belonging to an account with Copilot coding agent access - GitHub
-  rejects assigning issues to `@copilot` (see above) with the default
-  `GITHUB_TOKEN` or a GitHub App token, since Copilot usage is billed to a
-  human account.
+  belonging to an account with Copilot coding agent access - Copilot
+  ignores `@copilot` requests (see "Merge conflicts" above) from the
+  default `GITHUB_TOKEN` or a GitHub App token, since Copilot usage is
+  billed to a human account. `copilot-autopilot.yml` requires it outright.
+- **Copilot settings** for the conflict autopilot above: enable Copilot
+  coding agent and Copilot code review for this repo, and turn **off**
+  "require approval for workflow runs" for Copilot (Settings → Copilot →
+  Coding agent). Otherwise CI never runs on Copilot's pushes and the
+  autopilot waits forever (it logs a warning when that's the case).
 - **GPG signing key**: generate a key dedicated to this fork and add it as
   the `GPG_PRIVATE_KEY` / `GPG_PASSPHRASE` secrets on this repo (Settings →
   Secrets and variables → Actions). Upstream's key is Hetzner's and isn't

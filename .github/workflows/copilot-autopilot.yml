@@ -1,0 +1,53 @@
+name: Copilot autopilot
+
+# Drives the "resolve/<tag>" PRs that .github/workflows/cut-fork-release.yml
+# opens on a release conflict to a merge without a human: Copilot coding
+# agent fixes the code, Copilot code review reviews it, and this merges
+# it once it's clean and reruns cut-fork-release.yml to cut the release.
+# See scripts/copilot-autopilot.sh for the step-by-step logic, and
+# MAINTAINING.md for the one-time setup it needs.
+#
+# Polls rather than reacting to events: Copilot's own activity doesn't
+# reliably fire workflow events, and polling keeps every run idempotent.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: copilot-autopilot
+  cancel-in-progress: false
+
+env:
+  GH_REPO: ${{ github.repository }}
+  # Must be a real user PAT: Copilot ignores @copilot mentions from bots.
+  GH_TOKEN: ${{ secrets.SYNC_PAT }}
+  FEATURE_BRANCH: allow-rebuilding-with-image-or-user-data
+
+jobs:
+  drive:
+    runs-on: ubuntu-latest
+    # Never run this on upstream itself if the workflow file ever ends up
+    # there via a PR from this fork.
+    if: github.repository != 'hetznercloud/terraform-provider-hcloud'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          token: ${{ env.GH_TOKEN }}
+
+      - name: Fetch upstream tags
+        run: |
+          # Into their own namespace, see cut-fork-release.yml for why.
+          git remote add upstream https://github.com/hetznercloud/terraform-provider-hcloud.git
+          git fetch upstream '+refs/tags/*:refs/upstream-tags/*' --no-tags --quiet
+
+      - name: Drive resolve PRs
+        run: scripts/copilot-autopilot.sh
