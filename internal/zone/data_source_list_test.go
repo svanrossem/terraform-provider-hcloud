@@ -10,6 +10,7 @@ import (
 	"github.com/hetznercloud/hcloud-go/v2/hcloud/exp/labelutil"
 	"github.com/hetznercloud/hcloud-go/v2/hcloud/schema"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/teste2e"
+	"github.com/hetznercloud/terraform-provider-hcloud/internal/testmux"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/testtemplate"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/zone"
 )
@@ -45,7 +46,7 @@ func TestAccZoneDataSourceList(t *testing.T) {
 
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:                 teste2e.PreCheck(t),
-		ProtoV6ProviderFactories: teste2e.ProtoV6ProviderFactories(),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
 		Steps: []resource.TestStep{
 			{
 				Config: tmplMan.Render(t,
@@ -69,7 +70,7 @@ func TestAccZoneDataSourceList(t *testing.T) {
 					resource.TestCheckResourceAttr(byLabel.TFID(), "zones.0.primary_nameservers.#", "0"),
 					resource.TestCheckResourceAttr(byLabel.TFID(), "zones.0.delete_protection", "false"),
 					resource.TestCheckResourceAttr(byLabel.TFID(), "zones.0.authoritative_nameservers.assigned.#", "3"),
-					resource.TestCheckResourceAttr(byLabel.TFID(), "zones.0.registrar", "other"),
+					resource.TestMatchResourceAttr(byLabel.TFID(), "zones.0.registrar", zone.RegistrarRegexp),
 				),
 			},
 		},

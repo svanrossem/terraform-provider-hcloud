@@ -15,12 +15,9 @@ import (
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/certificate"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/firewall"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/floatingip"
-	"github.com/hetznercloud/terraform-provider-hcloud/internal/image"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/loadbalancer"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/network"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/placementgroup"
-	"github.com/hetznercloud/terraform-provider-hcloud/internal/primaryip"
-	"github.com/hetznercloud/terraform-provider-hcloud/internal/rdns"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/server"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/snapshot"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/util/hcloudutil"
@@ -42,7 +39,7 @@ func Provider() *schema.Provider {
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("HCLOUD_TOKEN", nil),
 				Description: "The Hetzner Cloud API token, can also be specified with the HCLOUD_TOKEN environment variable.",
-				ValidateFunc: func(val interface{}, key string) (warns []string, errs []error) { // nolint:revive
+				ValidateFunc: func(val any, key string) (warns []string, errs []error) { // nolint:revive
 					token := val.(string)
 					if len(token) != 64 {
 						errs = append(errs, errors.New("entered token is invalid (must be exactly 64 characters long)"))
@@ -85,14 +82,12 @@ func Provider() *schema.Provider {
 			firewall.AttachmentResourceType:   firewall.AttachmentResource(),
 			floatingip.AssignmentResourceType: floatingip.AssignmentResource(),
 			floatingip.ResourceType:           floatingip.Resource(),
-			primaryip.ResourceType:            primaryip.Resource(),
 			loadbalancer.ResourceType:         loadbalancer.Resource(),
 			loadbalancer.ServiceResourceType:  loadbalancer.ServiceResource(),
 			loadbalancer.TargetResourceType:   loadbalancer.TargetResource(),
 			network.ResourceType:              network.Resource(),
 			network.RouteResourceType:         network.RouteResource(),
 			network.SubnetResourceType:        network.SubnetResource(),
-			rdns.ResourceType:                 rdns.Resource(),
 			server.ResourceType:               server.Resource(),
 			snapshot.ResourceType:             snapshot.Resource(),
 			volume.AttachmentResourceType:     volume.AttachmentResource(),
@@ -106,10 +101,6 @@ func Provider() *schema.Provider {
 			firewall.DataSourceListType:       firewall.DataSourceList(),
 			floatingip.DataSourceType:         floatingip.DataSource(),
 			floatingip.DataSourceListType:     floatingip.DataSourceList(),
-			primaryip.DataSourceType:          primaryip.DataSource(),
-			primaryip.DataSourceListType:      primaryip.DataSourceList(),
-			image.DataSourceType:              image.DataSource(),
-			image.DataSourceListType:          image.DataSourceList(),
 			loadbalancer.DataSourceType:       loadbalancer.DataSource(),
 			loadbalancer.DataSourceListType:   loadbalancer.DataSourceList(),
 			network.DataSourceType:            network.DataSource(),
@@ -125,7 +116,7 @@ func Provider() *schema.Provider {
 	}
 }
 
-func providerConfigure(_ context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
+func providerConfigure(_ context.Context, d *schema.ResourceData) (any, diag.Diagnostics) {
 	opts := []hcloud.ClientOption{
 		hcloud.WithToken(d.Get("token").(string)),
 		hcloud.WithApplication("hcloud-terraform", Version),

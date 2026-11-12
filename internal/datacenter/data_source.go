@@ -3,7 +3,7 @@ package datacenter
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/datasourcevalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
@@ -45,6 +45,7 @@ var resourceDataAttrTypes = map[string]attr.Type{
 	"available_server_type_ids": types.ListType{ElemType: types.Int64Type},
 }
 
+//nolint:staticcheck
 func newResourceData(ctx context.Context, in *hcloud.Datacenter) (resourceData, diag.Diagnostics) {
 	var data resourceData
 	var diags diag.Diagnostics
@@ -73,8 +74,8 @@ func newResourceData(ctx context.Context, in *hcloud.Datacenter) (resourceData, 
 	for i, v := range in.ServerTypes.Available {
 		availableServerTypeIDs[i] = v.ID
 	}
-	sort.Slice(supportedServerTypeIDs, func(i, j int) bool { return supportedServerTypeIDs[i] < supportedServerTypeIDs[j] })
-	sort.Slice(availableServerTypeIDs, func(i, j int) bool { return availableServerTypeIDs[i] < availableServerTypeIDs[j] })
+	slices.Sort(supportedServerTypeIDs)
+	slices.Sort(availableServerTypeIDs)
 
 	data.SupportedServerTypeIDs, newDiags = types.ListValueFrom(ctx, types.Int64Type, supportedServerTypeIDs)
 	diags.Append(newDiags...)
@@ -110,11 +111,13 @@ func getCommonDataSchema(readOnly bool) map[string]schema.Attribute {
 			MarkdownDescription: "List of supported Server Types in the Datacenter.",
 			ElementType:         types.Int64Type,
 			Computed:            true,
+			DeprecationMessage:  "This attribute is deprecated and will be dropped after 2026-10-01. Use hcloud_server_types[].locations[] instead.",
 		},
 		"available_server_type_ids": schema.ListAttribute{
 			MarkdownDescription: "List of currently available Server Types in the Datacenter.",
 			ElementType:         types.Int64Type,
 			Computed:            true,
+			DeprecationMessage:  "This attribute is deprecated and will be dropped after 2026-10-01. Use hcloud_server_types[].locations[].available instead.",
 		},
 	}
 }
@@ -152,11 +155,24 @@ func (d *dataSource) Configure(_ context.Context, req datasource.ConfigureReques
 
 // Schema should return the schema for this data source.
 func (d *dataSource) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	resp.Schema.MarkdownDescription = `
+	resp.Schema.DeprecationMessage = util.MarkdownDescription(`
+The ''hcloud_datacenter'' data source is deprecated, and will be removed after 1 Oct. 2026.
+After this date, requests to the datacenters API endpoints will return ''HTTP 410 Gone''.
+
+Please use the ''hcloud_location'' data source instead.
+
+See https://docs.hetzner.cloud/changelog#2026-06-02-datacenters-deprecated for more details.
+`)
+	resp.Schema.MarkdownDescription = util.MarkdownDescription(`
 Provides details about a specific Hetzner Cloud Datacenter.
 
 Use this resource to get detailed information about a specific Datacenter.
-`
+
+!> The ''hcloud_datacenter'' data source is deprecated, and will be removed after 1 Oct. 2026.
+After this date, requests to the datacenters API endpoints will return ''HTTP 410 Gone''.
+Please use the ''hcloud_location'' data source instead.
+See the [changelog](https://docs.hetzner.cloud/changelog#2026-06-02-datacenters-deprecated) for more details.
+`)
 	resp.Schema.Attributes = getCommonDataSchema(false)
 }
 
@@ -181,11 +197,13 @@ func (d *dataSource) Read(ctx context.Context, req datasource.ReadRequest, resp 
 		return
 	}
 
+	//nolint:staticcheck
 	var result *hcloud.Datacenter
 	var err error
 
 	switch {
 	case !data.ID.IsNull():
+		//nolint:staticcheck
 		result, _, err = d.client.Datacenter.GetByID(ctx, data.ID.ValueInt64())
 		if err != nil {
 			resp.Diagnostics.Append(hcloudutil.APIErrorDiagnostics(err)...)
@@ -196,6 +214,7 @@ func (d *dataSource) Read(ctx context.Context, req datasource.ReadRequest, resp 
 			return
 		}
 	case !data.Name.IsNull():
+		//nolint:staticcheck
 		result, _, err = d.client.Datacenter.GetByName(ctx, data.Name.ValueString())
 		if err != nil {
 			resp.Diagnostics.Append(hcloudutil.APIErrorDiagnostics(err)...)
@@ -249,11 +268,25 @@ func (d *dataSourceList) Configure(_ context.Context, req datasource.ConfigureRe
 
 // Schema should return the schema for this data source.
 func (d *dataSourceList) Schema(_ context.Context, _ datasource.SchemaRequest, resp *datasource.SchemaResponse) {
-	resp.Schema.MarkdownDescription = `
+	resp.Schema.DeprecationMessage = util.MarkdownDescription(`
+The ''hcloud_datacenters'' data source is deprecated, and will be removed after 1 Oct. 2026.
+After this date, requests to the datacenters API endpoints will return ''HTTP 410 Gone''.
+
+Please use the ''hcloud_locations'' data source instead.
+
+See https://docs.hetzner.cloud/changelog#2026-06-02-datacenters-deprecated for more details.
+`)
+
+	resp.Schema.MarkdownDescription = util.MarkdownDescription(`
 Provides a list of available Hetzner Cloud Datacenters.
 
 This resource may be useful to create highly available infrastructure, distributed across several Datacenters.
-`
+
+!> The ''hcloud_datacenters'' data source is deprecated, and will be removed after 1 Oct. 2026.
+After this date, requests to the datacenters API endpoints will return ''HTTP 410 Gone''.
+Please use the ''hcloud_locations'' data source instead.
+See the [changelog](https://docs.hetzner.cloud/changelog#2026-06-02-datacenters-deprecated) for more details.
+`)
 
 	resp.Schema.Attributes = map[string]schema.Attribute{
 		"id": schema.StringAttribute{
@@ -291,6 +324,7 @@ type resourceDataList struct {
 	Datacenters   types.List   `tfsdk:"datacenters"`
 }
 
+//nolint:staticcheck
 func newResourceDataList(ctx context.Context, in []*hcloud.Datacenter) (resourceDataList, diag.Diagnostics) {
 	var data resourceDataList
 	var diags diag.Diagnostics
@@ -337,9 +371,11 @@ func (d *dataSourceList) Read(ctx context.Context, req datasource.ReadRequest, r
 		return
 	}
 
+	//nolint:staticcheck
 	var result []*hcloud.Datacenter
 	var err error
 
+	//nolint:staticcheck
 	result, err = d.client.Datacenter.All(ctx)
 	if err != nil {
 		resp.Diagnostics.Append(hcloudutil.APIErrorDiagnostics(err)...)

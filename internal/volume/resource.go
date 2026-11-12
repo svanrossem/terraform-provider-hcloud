@@ -53,8 +53,8 @@ func Resource() *schema.Resource {
 			"labels": {
 				Type:     schema.TypeMap,
 				Optional: true,
-				ValidateDiagFunc: func(i interface{}, path cty.Path) diag.Diagnostics { // nolint:revive
-					if ok, err := hcloud.ValidateResourceLabels(i.(map[string]interface{})); !ok {
+				ValidateDiagFunc: func(i any, path cty.Path) diag.Diagnostics { // nolint:revive
+					if ok, err := hcloud.ValidateResourceLabels(i.(map[string]any)); !ok {
 						return diag.FromErr(err)
 					}
 					return nil
@@ -81,7 +81,7 @@ func Resource() *schema.Resource {
 	}
 }
 
-func resourceVolumeCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceVolumeCreate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	c := m.(*hcloud.Client)
 
 	opts := hcloud.VolumeCreateOpts{
@@ -97,16 +97,16 @@ func resourceVolumeCreate(ctx context.Context, d *schema.ResourceData, m interfa
 	}
 	if labels, ok := d.GetOk("labels"); ok {
 		tmpLabels := make(map[string]string)
-		for k, v := range labels.(map[string]interface{}) {
+		for k, v := range labels.(map[string]any) {
 			tmpLabels[k] = v.(string)
 		}
 		opts.Labels = tmpLabels
 	}
 	if automount, ok := d.GetOk("automount"); ok {
-		opts.Automount = hcloud.Ptr(automount.(bool))
+		opts.Automount = new(automount.(bool))
 	}
 	if format, ok := d.GetOk("format"); ok {
-		opts.Format = hcloud.Ptr(format.(string))
+		opts.Format = new(format.(string))
 	}
 
 	result, _, err := c.Volume.Create(ctx, opts)
@@ -147,7 +147,7 @@ func resourceVolumeCreate(ctx context.Context, d *schema.ResourceData, m interfa
 					err := control.Retry(control.DefaultRetries, func() error {
 						o := hcloud.VolumeAttachOpts{Server: opts.Server}
 						if automount, ok := d.GetOk("automount"); ok {
-							opts.Automount = hcloud.Ptr(automount.(bool))
+							opts.Automount = new(automount.(bool))
 						}
 						action, _, err := c.Volume.AttachWithOpts(ctx, result.Volume, o)
 						if err != nil {
@@ -173,7 +173,7 @@ func resourceVolumeCreate(ctx context.Context, d *schema.ResourceData, m interfa
 	return resourceVolumeRead(ctx, d, m)
 }
 
-func resourceVolumeRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceVolumeRead(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	client := m.(*hcloud.Client)
 
 	id, err := util.ParseID(d.Id())
@@ -197,7 +197,7 @@ func resourceVolumeRead(ctx context.Context, d *schema.ResourceData, m interface
 	return nil
 }
 
-func resourceVolumeUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceVolumeUpdate(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	c := m.(*hcloud.Client)
 
 	id, err := util.ParseID(d.Id())
@@ -266,7 +266,7 @@ func resourceVolumeUpdate(ctx context.Context, d *schema.ResourceData, m interfa
 			err := control.Retry(control.DefaultRetries, func() error {
 				opts := hcloud.VolumeAttachOpts{Server: &hcloud.Server{ID: serverID}}
 				if automount, ok := d.GetOk("automount"); ok {
-					opts.Automount = hcloud.Ptr(automount.(bool))
+					opts.Automount = new(automount.(bool))
 				}
 
 				action, _, err := c.Volume.AttachWithOpts(ctx, volume, opts)
@@ -303,7 +303,7 @@ func resourceVolumeUpdate(ctx context.Context, d *schema.ResourceData, m interfa
 	if d.HasChange("labels") {
 		labels := d.Get("labels")
 		tmpLabels := make(map[string]string)
-		for k, v := range labels.(map[string]interface{}) {
+		for k, v := range labels.(map[string]any) {
 			tmpLabels[k] = v.(string)
 		}
 		_, _, err := c.Volume.Update(ctx, volume, hcloud.VolumeUpdateOpts{
@@ -328,7 +328,7 @@ func resourceVolumeUpdate(ctx context.Context, d *schema.ResourceData, m interfa
 	return resourceVolumeRead(ctx, d, m)
 }
 
-func resourceVolumeDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
+func resourceVolumeDelete(ctx context.Context, d *schema.ResourceData, m any) diag.Diagnostics {
 	c := m.(*hcloud.Client)
 
 	volumeID, err := util.ParseID(d.Id())
@@ -392,8 +392,8 @@ func setVolumeSchema(d *schema.ResourceData, v *hcloud.Volume) {
 	util.SetSchemaFromAttributes(d, getVolumeAttributes(v))
 }
 
-func getVolumeAttributes(v *hcloud.Volume) map[string]interface{} {
-	res := map[string]interface{}{
+func getVolumeAttributes(v *hcloud.Volume) map[string]any {
+	res := map[string]any{
 		"id":                v.ID,
 		"name":              v.Name,
 		"size":              v.Size,

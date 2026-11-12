@@ -10,17 +10,11 @@ resource "hcloud_server" "{{ .RName }}" {
   {{- if .LocationName }}
   location    = "{{ .LocationName }}"
   {{ end }}
-  {{- if .Datacenter }}
-  datacenter  = "{{ .Datacenter }}"
-  {{ end }}
   {{- if .SSHKeys }}
   ssh_keys    = [{{ .SSHKeys | join ", " }}]
   {{ end }}
   {{- if .KeepDisk }}
   keep_disk   = {{ .KeepDisk }}
-  {{ end }}
-  {{- if .AllowDeprecatedImages }}
-  allow_deprecated_images   = {{ .AllowDeprecatedImages }}
   {{ end }}
   {{- if .ISO }}
   iso         = {{ .ISO }}
@@ -33,9 +27,13 @@ resource "hcloud_server" "{{ .RName }}" {
   {{ end }}
 
   {{- range $network := .Networks }}{{ with $network }}
-  {{- if .NetworkID }}
   network {
+      {{- if .NetworkID }}
       network_id = {{ .NetworkID }}
+      {{ end }}
+      {{- if .SubnetID }}
+      subnet_id  = {{ .SubnetID }}
+      {{ end }}
       {{- if .IP }}
       ip         = "{{ .IP }}"
       {{ end }}
@@ -46,7 +44,7 @@ resource "hcloud_server" "{{ .RName }}" {
       alias_ips = []
       {{- end }}
   }
-  {{ end }}{{ end }}
+  {{ end }}
   {{ end }}
 
   {{- if .PublicNet }}
@@ -67,7 +65,7 @@ resource "hcloud_server" "{{ .RName }}" {
 EOF
   {{ end }}
 
-  {{ if .FirewallIDs }}
+  {{ if ne .FirewallIDs nil }}
   firewall_ids = [
   {{- range $k,$v := .FirewallIDs }}
      {{ $v }},

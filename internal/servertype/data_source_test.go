@@ -7,13 +7,14 @@ import (
 
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/servertype"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/teste2e"
+	"github.com/hetznercloud/terraform-provider-hcloud/internal/testmux"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/testtemplate"
 )
 
 func TestAccServerTypeDataSource(t *testing.T) {
 	tmplMan := testtemplate.Manager{}
 
-	byName := &servertype.DData{ServerTypeName: teste2e.TestServerType}
+	byName := &servertype.DData{ServerTypeName: "cpx22"}
 	byName.SetRName("by_name")
 
 	byID := &servertype.DData{ServerTypeID: "109"}
@@ -21,7 +22,7 @@ func TestAccServerTypeDataSource(t *testing.T) {
 
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:                 teste2e.PreCheck(t),
-		ProtoV6ProviderFactories: teste2e.ProtoV6ProviderFactories(),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
 		Steps: []resource.TestStep{
 			{
 				Config: tmplMan.Render(t,
@@ -43,6 +44,8 @@ func TestAccServerTypeDataSource(t *testing.T) {
 					resource.TestCheckResourceAttr(byName.TFID(), "locations.0.id", "1"),
 					resource.TestCheckResourceAttr(byName.TFID(), "locations.0.name", "fsn1"),
 					resource.TestCheckResourceAttr(byName.TFID(), "locations.0.is_deprecated", "false"),
+					resource.TestCheckResourceAttrSet(byName.TFID(), "locations.0.available"),
+					resource.TestCheckResourceAttrSet(byName.TFID(), "locations.0.recommended"),
 
 					resource.TestCheckResourceAttr(byName.TFID(), "included_traffic", "0"),
 					resource.TestCheckResourceAttr(byName.TFID(), "is_deprecated", "false"),
@@ -58,10 +61,12 @@ func TestAccServerTypeDataSource(t *testing.T) {
 					resource.TestCheckResourceAttr(byID.TFID(), "storage_type", "local"),
 					resource.TestCheckResourceAttr(byID.TFID(), "cpu_type", "shared"),
 					resource.TestCheckResourceAttr(byID.TFID(), "architecture", "x86"),
-					resource.TestCheckResourceAttr(byName.TFID(), "locations.#", "4"),
-					resource.TestCheckResourceAttr(byName.TFID(), "locations.0.id", "1"),
-					resource.TestCheckResourceAttr(byName.TFID(), "locations.0.name", "fsn1"),
-					resource.TestCheckResourceAttr(byName.TFID(), "locations.0.is_deprecated", "false"),
+					resource.TestCheckResourceAttr(byID.TFID(), "locations.#", "4"),
+					resource.TestCheckResourceAttr(byID.TFID(), "locations.0.id", "1"),
+					resource.TestCheckResourceAttr(byID.TFID(), "locations.0.name", "fsn1"),
+					resource.TestCheckResourceAttr(byID.TFID(), "locations.0.is_deprecated", "false"),
+					resource.TestCheckResourceAttrSet(byID.TFID(), "locations.0.available"),
+					resource.TestCheckResourceAttrSet(byID.TFID(), "locations.0.recommended"),
 
 					resource.TestCheckResourceAttr(byID.TFID(), "included_traffic", "0"),
 					resource.TestCheckResourceAttr(byID.TFID(), "is_deprecated", "false"),
@@ -81,7 +86,7 @@ func TestAccServerTypeDataSourceList(t *testing.T) {
 
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:                 teste2e.PreCheck(t),
-		ProtoV6ProviderFactories: teste2e.ProtoV6ProviderFactories(),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
 		Steps: []resource.TestStep{
 			{
 				Config: tmplMan.Render(t,
