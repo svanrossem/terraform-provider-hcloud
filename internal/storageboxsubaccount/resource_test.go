@@ -17,6 +17,7 @@ import (
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/storagebox"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/storageboxsubaccount"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/teste2e"
+	"github.com/hetznercloud/terraform-provider-hcloud/internal/testmux"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/testsupport"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/testtemplate"
 )
@@ -64,7 +65,7 @@ func TestAccStorageBoxSubaccountResource(t *testing.T) {
 
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:                 teste2e.PreCheck(t),
-		ProtoV6ProviderFactories: teste2e.ProtoV6ProviderFactories(),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
 		CheckDestroy:             testsupport.CheckAPIResourceAllAbsent(storageboxsubaccount.ResourceType, storageboxsubaccount.GetAPIResource()),
 		Steps: []resource.TestStep{
 			{
@@ -97,13 +98,8 @@ func TestAccStorageBoxSubaccountResource(t *testing.T) {
 			},
 			{
 				// Import
-
-				Config: tmplMan.Render(t,
-					"testdata/r/hcloud_storage_box", resStorageBox,
-					"testdata/r/hcloud_storage_box_subaccount", res,
-				),
-				ImportState:  true,
 				ResourceName: res.TFID(),
+				ImportState:  true,
 				ImportStateIdFunc: func(_ *terraform.State) (string, error) {
 					return fmt.Sprintf("%d/%d", subaccount.StorageBox.ID, subaccount.ID), nil
 				},

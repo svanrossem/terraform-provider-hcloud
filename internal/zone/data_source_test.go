@@ -10,6 +10,7 @@ import (
 	"github.com/hetznercloud/hcloud-go/v2/hcloud/exp/labelutil"
 	"github.com/hetznercloud/hcloud-go/v2/hcloud/schema"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/teste2e"
+	"github.com/hetznercloud/terraform-provider-hcloud/internal/testmux"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/testsupport"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/testtemplate"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/zone"
@@ -43,7 +44,7 @@ func TestAccZoneDataSource(t *testing.T) {
 
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:                 teste2e.PreCheck(t),
-		ProtoV6ProviderFactories: teste2e.ProtoV6ProviderFactories(),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
 		CheckDestroy:             testsupport.CheckAPIResourceAllAbsent(zone.ResourceType, zone.GetAPIResource()),
 		Steps: []resource.TestStep{
 			{
@@ -66,7 +67,7 @@ func TestAccZoneDataSource(t *testing.T) {
 					resource.TestCheckResourceAttr(byName.TFID(), "primary_nameservers.#", "0"),
 					resource.TestCheckResourceAttr(byName.TFID(), "delete_protection", "false"),
 					resource.TestCheckResourceAttr(byName.TFID(), "authoritative_nameservers.assigned.#", "3"),
-					resource.TestCheckResourceAttr(byName.TFID(), "registrar", "other"),
+					resource.TestMatchResourceAttr(byName.TFID(), "registrar", zone.RegistrarRegexp),
 
 					resource.TestCheckResourceAttr(byID.TFID(), "name", res.Name),
 					resource.TestCheckResourceAttr(byID.TFID(), "mode", "primary"),
@@ -75,7 +76,7 @@ func TestAccZoneDataSource(t *testing.T) {
 					resource.TestCheckResourceAttr(byID.TFID(), "primary_nameservers.#", "0"),
 					resource.TestCheckResourceAttr(byID.TFID(), "delete_protection", "false"),
 					resource.TestCheckResourceAttr(byID.TFID(), "authoritative_nameservers.assigned.#", "3"),
-					resource.TestCheckResourceAttr(byID.TFID(), "registrar", "other"),
+					resource.TestMatchResourceAttr(byID.TFID(), "registrar", zone.RegistrarRegexp),
 
 					resource.TestCheckResourceAttr(byLabel.TFID(), "name", res.Name),
 					resource.TestCheckResourceAttr(byLabel.TFID(), "mode", "primary"),
@@ -84,7 +85,7 @@ func TestAccZoneDataSource(t *testing.T) {
 					resource.TestCheckResourceAttr(byLabel.TFID(), "primary_nameservers.#", "0"),
 					resource.TestCheckResourceAttr(byLabel.TFID(), "delete_protection", "false"),
 					resource.TestCheckResourceAttr(byLabel.TFID(), "authoritative_nameservers.assigned.#", "3"),
-					resource.TestCheckResourceAttr(byLabel.TFID(), "registrar", "other"),
+					resource.TestMatchResourceAttr(byLabel.TFID(), "registrar", zone.RegistrarRegexp),
 				),
 			},
 		},

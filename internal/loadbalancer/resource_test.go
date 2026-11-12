@@ -6,11 +6,14 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/loadbalancer"
+	"github.com/hetznercloud/terraform-provider-hcloud/internal/primaryip"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/server"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/teste2e"
+	"github.com/hetznercloud/terraform-provider-hcloud/internal/testmux"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/testsupport"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/testtemplate"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/util"
@@ -33,7 +36,7 @@ func TestAccLoadBalancerResource(t *testing.T) {
 	tmplMan := testtemplate.Manager{}
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:                 teste2e.PreCheck(t),
-		ProtoV6ProviderFactories: teste2e.ProtoV6ProviderFactories(),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
 		CheckDestroy:             testsupport.CheckResourcesDestroyed(loadbalancer.ResourceType, loadbalancer.ByID(t, &lb)),
 		Steps: []resource.TestStep{
 			{
@@ -75,6 +78,104 @@ func TestAccLoadBalancerResource(t *testing.T) {
 	})
 }
 
+func TestAccLoadBalancerResource_PublicNet(t *testing.T) {
+	tmplMan := testtemplate.Manager{}
+
+	var (
+		hcLoadBalancer hcloud.LoadBalancer
+		hcPrimaryIPv4A hcloud.PrimaryIP
+		hcPrimaryIPv6C hcloud.PrimaryIP
+		hcPrimaryIPv6D hcloud.PrimaryIP
+	)
+
+	ips := primaryip.NewBlueprint(t)
+
+	res1 := LoadBalancerRData()
+	res1.IPv4ID = ips.PrimaryIPv4A.TFID() + ".id"
+	res1.IPv6ID = ips.PrimaryIPv6C.TFID() + ".id"
+
+	// Removing the public net config should not trigger a replace
+	res2 := testtemplate.DeepCopy(t, res1)
+	res2.IPv4ID = ""
+	res2.IPv6ID = ""
+
+	// Replace the ipv6 with a new one should trigger a replace and lose the original ipv4
+	res3 := testtemplate.DeepCopy(t, res2)
+	res3.IPv4ID = ""
+	res3.IPv6ID = ips.PrimaryIPv6D.TFID() + ".id"
+
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:                 teste2e.PreCheck(t),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
+		CheckDestroy:             testsupport.CheckResourcesDestroyed(loadbalancer.ResourceType, loadbalancer.ByID(t, &hcLoadBalancer)),
+		Steps: []resource.TestStep{
+			{
+				Config: tmplMan.Render(t,
+					"testdata/r/hcloud_primary_ip", ips.PrimaryIPv4A,
+					"testdata/r/hcloud_primary_ip", ips.PrimaryIPv6C,
+					"testdata/r/hcloud_load_balancer", res1,
+				),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction(res1.TFID(), plancheck.ResourceActionCreate),
+					},
+				},
+				Check: resource.ComposeTestCheckFunc(
+					testsupport.CheckResourceExists(ips.PrimaryIPv4A.TFID(), primaryip.ByID(t, &hcPrimaryIPv4A)),
+					testsupport.CheckResourceExists(ips.PrimaryIPv6C.TFID(), primaryip.ByID(t, &hcPrimaryIPv6C)),
+					testsupport.CheckResourceExists(res1.TFID(), loadbalancer.ByID(t, &hcLoadBalancer)),
+					testsupport.CheckResourceAttrFunc(res1.TFID(), "ipv4_id", func() string { return util.FormatID(hcPrimaryIPv4A.ID) }),
+					testsupport.CheckResourceAttrFunc(res1.TFID(), "ipv6_id", func() string { return util.FormatID(hcPrimaryIPv6C.ID) }),
+				),
+			},
+			{
+				ResourceName:      res1.TFID(),
+				ImportState:       true,
+				ImportStateVerify: true,
+			},
+			{
+				Config: tmplMan.Render(t,
+					"testdata/r/hcloud_primary_ip", ips.PrimaryIPv4A,
+					"testdata/r/hcloud_primary_ip", ips.PrimaryIPv6C,
+					"testdata/r/hcloud_load_balancer", res2,
+				),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction(res1.TFID(), plancheck.ResourceActionNoop),
+					},
+				},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testsupport.CheckResourceExists(ips.PrimaryIPv4A.TFID(), primaryip.ByID(t, &hcPrimaryIPv4A)),
+					testsupport.CheckResourceExists(ips.PrimaryIPv6C.TFID(), primaryip.ByID(t, &hcPrimaryIPv6C)),
+					testsupport.CheckResourceExists(res2.TFID(), loadbalancer.ByID(t, &hcLoadBalancer)),
+					testsupport.CheckResourceAttrFunc(res2.TFID(), "ipv4_id", func() string { return util.FormatID(hcPrimaryIPv4A.ID) }),
+					testsupport.CheckResourceAttrFunc(res2.TFID(), "ipv6_id", func() string { return util.FormatID(hcPrimaryIPv6C.ID) }),
+				),
+			},
+
+			{
+				Config: tmplMan.Render(t,
+					"testdata/r/hcloud_primary_ip", ips.PrimaryIPv4A,
+					"testdata/r/hcloud_primary_ip", ips.PrimaryIPv6D,
+					"testdata/r/hcloud_load_balancer", res3,
+				),
+				ConfigPlanChecks: resource.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction(res3.TFID(), plancheck.ResourceActionReplace),
+					},
+				},
+				Check: resource.ComposeAggregateTestCheckFunc(
+					testsupport.CheckResourceExists(ips.PrimaryIPv4A.TFID(), primaryip.ByID(t, &hcPrimaryIPv4A)),
+					testsupport.CheckResourceExists(ips.PrimaryIPv6D.TFID(), primaryip.ByID(t, &hcPrimaryIPv6D)),
+					testsupport.CheckResourceExists(res3.TFID(), loadbalancer.ByID(t, &hcLoadBalancer)),
+					resource.TestCheckResourceAttrSet(res3.TFID(), "ipv4_id"),
+					testsupport.CheckResourceAttrFunc(res3.TFID(), "ipv6_id", func() string { return util.FormatID(hcPrimaryIPv6D.ID) }),
+				),
+			},
+		},
+	})
+}
+
 func TestAccLoadBalancerResource_Resize(t *testing.T) {
 	var lb hcloud.LoadBalancer
 
@@ -89,7 +190,7 @@ func TestAccLoadBalancerResource_Resize(t *testing.T) {
 	tmplMan := testtemplate.Manager{}
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:                 teste2e.PreCheck(t),
-		ProtoV6ProviderFactories: teste2e.ProtoV6ProviderFactories(),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
 		CheckDestroy:             testsupport.CheckResourcesDestroyed(loadbalancer.ResourceType, loadbalancer.ByID(t, &lb)),
 		Steps: []resource.TestStep{
 			{
@@ -163,7 +264,7 @@ func TestAccLoadBalancerResource_InlineTarget(t *testing.T) {
 
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:                 teste2e.PreCheck(t),
-		ProtoV6ProviderFactories: teste2e.ProtoV6ProviderFactories(),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
 		CheckDestroy: resource.ComposeAggregateTestCheckFunc(
 			testsupport.CheckResourcesDestroyed(server.ResourceType, server.ByID(t, nil)),
 			testsupport.CheckResourcesDestroyed(loadbalancer.ResourceType, loadbalancer.ByID(t, nil)),
@@ -217,7 +318,7 @@ func TestAccLoadBalancerResource_Protection(t *testing.T) {
 	tmplMan := testtemplate.Manager{}
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:                 teste2e.PreCheck(t),
-		ProtoV6ProviderFactories: teste2e.ProtoV6ProviderFactories(),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
 		CheckDestroy:             testsupport.CheckResourcesDestroyed(loadbalancer.ResourceType, loadbalancer.ByID(t, &lb)),
 		Steps: []resource.TestStep{
 			{

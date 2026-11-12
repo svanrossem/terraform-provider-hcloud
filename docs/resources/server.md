@@ -12,14 +12,10 @@ Provides an Hetzner Cloud server resource. This can be used to create, modify, a
 
 ### `datacenter` attribute
 
-The `datacenter` attribute is deprecated, use the `location` attribute instead.
+The `datacenter` attribute is marked for removal since `v1.67.0`, you must use the `location` attribute instead.
 
-See our the [API changelog](https://docs.hetzner.cloud/changelog#2025-12-16-phasing-out-datacenters) for more details.
-
--> Please upgrade to `v1.58.0+` of the provider to avoid issues once the Hetzner Cloud API no longer accepts
-and returns the `datacenter` attribute. This version of the provider remains backward compatible by preserving
-the `datacenter` value in the state and by extracting the `location` name from the `datacenter` attribute when
-communicating with the API.
+See our [deprecation](https://docs.hetzner.cloud/changelog#2025-12-16-phasing-out-datacenters) and
+[removal](https://docs.hetzner.cloud/changelog#2026-07-01-removing-datacenters) changelog for more details.
 
 ## Example Usage
 
@@ -44,7 +40,6 @@ resource "hcloud_primary_ip" "primary_ip_1" {
 name          = "primary_ip_test"
 location      = "hel1"
 type          = "ipv4"
-assignee_type = "server"
 auto_delete   = true
   labels = {
     "hallo" : "welt"
@@ -75,7 +70,7 @@ resource "hcloud_network" "network" {
   ip_range = "10.0.0.0/16"
 }
 
-resource "hcloud_network_subnet" "network-subnet" {
+resource "hcloud_network_subnet" "network_subnet" {
   type         = "cloud"
   network_id   = hcloud_network.network.id
   network_zone = "eu-central"
@@ -89,21 +84,13 @@ resource "hcloud_server" "server" {
   location    = "nbg1"
 
   network {
-    network_id = hcloud_network.network.id
-    ip         = "10.0.1.5"
-    alias_ips  = [
+    subnet_id = hcloud_network_subnet.network_subnet.id
+    ip        = "10.0.1.5"
+    alias_ips = [
       "10.0.1.6",
       "10.0.1.7"
     ]
   }
-
-  # **Note**: the depends_on is important when directly attaching the
-  # server to a network. Otherwise Terraform will attempt to create
-  # server and sub-network in parallel. This may result in the server
-  # creation failing randomly.
-  depends_on = [
-    hcloud_network_subnet.network-subnet
-  ]
 }
 ```
 
@@ -176,7 +163,7 @@ The following arguments are supported:
 - `image` - (Required, string) Name or ID of the image the server is created from. **Note** the `image` property is only required when using the resource to create servers. As the Hetzner Cloud API may return servers without an image ID set it is not marked as required in the Terraform Provider itself. Thus, users will get an error from the underlying client library if they forget to set the property and try to create a server.
 - `location` - (Optional, string) The location name to create the server in. See the [Hetzner Docs](https://docs.hetzner.com/cloud/general/locations/#what-locations-are-there) for more details about locations.
 - `datacenter` - (Optional, string, deprecated) The datacenter name to create the server in. See the [Hetzner Docs](https://docs.hetzner.com/cloud/general/locations/#what-datacenters-are-there) for more details about datacenters.
-- `user_data` - (Optional, string) Cloud-Init user data to use during server creation
+- `user_data` - (Optional, string) Cloud-Init user data to use during server creation. This field is limited to 32KiB.
 - `ssh_keys` - (Optional, list) SSH key IDs or names which should be injected into the server at creation time. Once the server is created, you can not update the list of SSH Keys. If you do change this, you will be prompted to destroy and recreate the server. You can avoid this by setting [lifecycle.ignore_changes](https://developer.hashicorp.com/terraform/language/meta-arguments/lifecycle#ignore_changes) to `[ ssh_keys ]`.
 - `public_net` - (Optional, block) In this block you can either enable / disable ipv4 and ipv6 or link existing primary IPs (checkout the examples).
   If this block is not defined, two primary (ipv4 & ipv6) ips getting auto generated.
@@ -195,12 +182,15 @@ The following arguments are supported:
 - `placement_group_id` - (Optional, string) Placement Group ID the server added to on creation.
 - `delete_protection` - (Optional, bool) Enable or disable delete protection (Needs to be the same as `rebuild_protection`). See ["Delete Protection"](../index.html.markdown#delete-protection) in the Provider Docs for details.
 - `rebuild_protection` - (Optional, bool) Enable or disable rebuild protection (Needs to be the same as `delete_protection`).
-- `allow_deprecated_images` - (Optional, bool) Enable the use of deprecated images (default: false). **Note** Deprecated images will be removed after three months. Using them is then no longer possible.
+- `allow_deprecated_images` - (Optional, bool) Unused attribute, consider removing it from your configuration.
 - `shutdown_before_deletion` - (bool) Whether to try shutting the server down gracefully before deleting it.
 
 `network` support the following fields:
 
-- `network_id` - (Required, int) ID of the network
+**Note:** At least one of `network_id` or `subnet_id` must be specified. If both are specified, they must match.
+
+- `network_id` - (Optional, int) ID of the network to attach the server to. Using `subnet_id` is preferred. When used alone without `subnet_id`, the server will be attached to the last subnet (ordered by `ip_range`), which may be unpredictable.
+- `subnet_id` - (Optional, string) ID of the network subnet to attach the server to.
 - `ip` - (Optional, string) Specify the IP the server should get in the network
 - `alias_ips` - (Optional, list) Alias IPs the server should have in the Network.
 
@@ -241,7 +231,10 @@ The following attributes are exported:
 
 a single entry in `network` support the following fields:
 
-- `network_id` - (Required, int) ID of the network
+**Note:** At least one of `network_id` or `subnet_id` must be specified. If both are specified, they must match.
+
+- `network_id` - (Optional, int) ID of the network to attach the server to. Using `subnet_id` is preferred. When used alone without `subnet_id`, the server will be attached to the last subnet (ordered by `ip_range`), which may be unpredictable.
+- `subnet_id` - (Optional, string) ID of the network subnet to attach the server to.
 - `ip` - (Optional, string) Specify the IP the server should get in the network
 - `alias_ips` - (Optional, list) Alias IPs the server should have in the Network.
 - `mac_address` - (Optional, string) The MAC address the private interface of the server has

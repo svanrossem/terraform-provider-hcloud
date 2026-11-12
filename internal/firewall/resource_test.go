@@ -9,7 +9,9 @@ import (
 
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/firewall"
+	"github.com/hetznercloud/terraform-provider-hcloud/internal/server"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/teste2e"
+	"github.com/hetznercloud/terraform-provider-hcloud/internal/testmux"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/testsupport"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/testtemplate"
 )
@@ -68,7 +70,7 @@ func TestAccFirewallResource(t *testing.T) {
 	tmplMan := testtemplate.Manager{}
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:                 teste2e.PreCheck(t),
-		ProtoV6ProviderFactories: teste2e.ProtoV6ProviderFactories(),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
 		CheckDestroy:             testsupport.CheckResourcesDestroyed(firewall.ResourceType, firewall.ByID(t, &f)),
 		Steps: []resource.TestStep{
 			{
@@ -145,7 +147,7 @@ func TestAccFirewallResource_ApplyTo(t *testing.T) {
 	tmplMan := testtemplate.Manager{}
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:                 teste2e.PreCheck(t),
-		ProtoV6ProviderFactories: teste2e.ProtoV6ProviderFactories(),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
 		CheckDestroy:             testsupport.CheckResourcesDestroyed(firewall.ResourceType, firewall.ByID(t, &f)),
 		Steps: []resource.TestStep{
 			{
@@ -171,6 +173,62 @@ func TestAccFirewallResource_ApplyTo(t *testing.T) {
 					testsupport.LiftTCF(hasFirewallRule(t, &f, "in", "80", "tcp", []string{"0.0.0.0/0", "::/0"}, []string{}, "allow http in")),
 					testsupport.LiftTCF(hasLabelSelectorResource(t, &f, "key=value")),
 					testsupport.LiftTCF(hasLabelSelectorResource(t, &f, "another=value")),
+				),
+			},
+		},
+	})
+}
+
+func TestAccFirewallResource_ApplyToServerReplace(t *testing.T) {
+	var (
+		fw  hcloud.Firewall
+		srv hcloud.Server
+	)
+
+	srvRes := &server.RData{
+		Name:         "applyto-server",
+		Type:         teste2e.TestServerType,
+		Image:        teste2e.TestImage,
+		LocationName: teste2e.TestLocationName,
+	}
+	srvRes.SetRName("applyto_server")
+
+	fwRes := firewall.NewRData(t, "applyto-firewall", nil, []firewall.RDataApplyTo{
+		{
+			Server: srvRes.TFID() + ".id",
+		},
+	})
+
+	tmplMan := testtemplate.Manager{}
+	config := tmplMan.Render(t,
+		"testdata/r/hcloud_server", srvRes,
+		"testdata/r/hcloud_firewall", fwRes,
+	)
+	resource.ParallelTest(t, resource.TestCase{
+		PreCheck:                 teste2e.PreCheck(t),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
+		CheckDestroy: resource.ComposeAggregateTestCheckFunc(
+			testsupport.CheckResourcesDestroyed(server.ResourceType, server.ByID(t, &srv)),
+			testsupport.CheckResourcesDestroyed(firewall.ResourceType, firewall.ByID(t, &fw)),
+		),
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+				Check: resource.ComposeTestCheckFunc(
+					testsupport.CheckResourceExists(srvRes.TFID(), server.ByID(t, &srv)),
+					testsupport.CheckResourceExists(fwRes.TFID(), firewall.ByID(t, &fw)),
+					testsupport.LiftTCF(hasServerResource(t, &fw, &srv)),
+				),
+			},
+			// Taint the server to force replacement.
+			// Check that the firewall is updated to point to the new server.
+			{
+				Taint:  []string{srvRes.TFID()},
+				Config: config,
+				Check: resource.ComposeTestCheckFunc(
+					testsupport.CheckResourceExists(srvRes.TFID(), server.ByID(t, &srv)),
+					testsupport.CheckResourceExists(fwRes.TFID(), firewall.ByID(t, &fw)),
+					testsupport.LiftTCF(hasServerResource(t, &fw, &srv)),
 				),
 			},
 		},
@@ -214,7 +272,7 @@ func TestAccFirewallResource_Normalization(t *testing.T) {
 
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:                 teste2e.PreCheck(t),
-		ProtoV6ProviderFactories: teste2e.ProtoV6ProviderFactories(),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
 		CheckDestroy:             testsupport.CheckResourcesDestroyed(firewall.ResourceType, firewall.ByID(t, &f)),
 		Steps: []resource.TestStep{
 			{

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
+	"github.com/hetznercloud/terraform-provider-hcloud/internal/teste2e"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/testsupport"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/testtemplate"
 )
@@ -70,8 +71,7 @@ type RData struct {
 	Type                   string
 	Image                  string
 	LocationName           string
-	Datacenter             string
-	PublicNet              map[string]interface{}
+	PublicNet              map[string]any
 	SSHKeys                []string
 	KeepDisk               bool
 	Rescue                 string
@@ -95,6 +95,7 @@ type RData struct {
 // to a network directly in the server resource.
 type RDataInlineNetwork struct {
 	NetworkID string
+	SubnetID  string
 	IP        string
 	AliasIPs  []string
 }
@@ -150,4 +151,33 @@ type ARebuildData struct {
 // TFID returns the action identifier.
 func (d *ARebuildData) TFID() string {
 	return fmt.Sprintf("action.%s.%s", RebuildActionType, d.RName())
+}
+
+type Blueprint struct {
+	ServerA *RData
+	ServerB *RData
+}
+
+func NewBlueprint(t *testing.T) *Blueprint {
+	t.Helper()
+
+	b := &Blueprint{}
+
+	b.ServerA = &RData{
+		Name:         "a",
+		Type:         teste2e.TestServerType,
+		LocationName: teste2e.TestLocationName,
+		Image:        teste2e.TestImage,
+	}
+	b.ServerA.SetRName("a")
+
+	b.ServerB = &RData{
+		Name:         "b",
+		Type:         teste2e.TestServerType,
+		LocationName: teste2e.TestLocationName,
+		Image:        teste2e.TestImage,
+	}
+	b.ServerB.SetRName("b")
+
+	return b
 }

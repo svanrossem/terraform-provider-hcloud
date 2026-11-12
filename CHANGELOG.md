@@ -1,5 +1,233 @@
 # Changelog
 
+## [v1.70.2](https://github.com/hetznercloud/terraform-provider-hcloud/releases/tag/v1.70.2)
+
+[Compare to previous version](https://github.com/hetznercloud/terraform-provider-hcloud/compare/v1.70.1...v1.70.2)
+
+### Mark DNS Zone TSIG key attribute as sensitive
+
+The DNS Zone TSIG key was declared as a plain string with no `Sensitive: true`, in both the resource and the data source, so Terraform rendered its value verbatim in terraform plan and terraform apply output. This release marks the attributes as sensitive.
+
+Details can be found in the security advisory [GHSA-jx87-47g9-rmx3](https://github.com/hetznercloud/terraform-provider-hcloud/security/advisories/GHSA-jx87-47g9-rmx3).
+
+Thanks to @kta1kri for responsibly reporting this vulnerability.
+
+### Bug Fixes
+
+- **zone**: mark tsig_key attribute as sensitive ([76bd70c](https://github.com/hetznercloud/terraform-provider-hcloud/commit/76bd70c720fd2b13c67e61687fa4742680f5686b))
+
+## [v1.70.1](https://github.com/hetznercloud/terraform-provider-hcloud/releases/tag/v1.70.1)
+
+[Compare to previous version](https://github.com/hetznercloud/terraform-provider-hcloud/compare/v1.70.0...v1.70.1)
+
+### Bug Fixes
+
+- update Go to mitigate CVE-2026-111943 (#1551) ([0db22b8](https://github.com/hetznercloud/terraform-provider-hcloud/commit/0db22b886ab0934e351992a234ecc03d231ced36))
+
+## [v1.70.0](https://github.com/hetznercloud/terraform-provider-hcloud/releases/tag/v1.70.0)
+
+[Compare to previous version](https://github.com/hetznercloud/terraform-provider-hcloud/compare/v1.69.0...v1.70.0)
+
+### Load Balancers can now be created with existing Primary IPs
+
+Primary IPs, which were previously available exclusively for Servers, are now also available for Load Balancers. When creating a Load Balancer, you can assign an [existing Primary IP](https://docs.hetzner.cloud/reference/cloud#tag/primary-ips/list_primary_ips) instead of having an IP address allocated automatically. Currently, you cannot change the Primary IP once the Load Balancer has been created.
+
+To support this change, we added the following attributes to the `hcloud_load_balancer` resource:
+
+- `ipv4_id`: ID of an IPv4 Primary IP to assign to the Load Balancer.
+- `ipv6_id`:  ID of an IPv6 Primary IP to assign to the Load Balancer.
+
+If you omit a property, a new Primary IP of that version is allocated for the Load Balancer, as before.
+
+A Primary IP can currently only be assigned when the Load Balancer is created. It stays assigned for the entire lifetime of the Load Balancer.
+
+Related to https://docs.hetzner.cloud/changelog#2026-10-05-load-balancers-can-use-existing-primary-ips.
+
+### Features
+
+- add hcloud_network_members data-source (#1535) ([2c25a00](https://github.com/hetznercloud/terraform-provider-hcloud/commit/2c25a00b03f8e5dd9f3fc728c189a29f3cb6f373))
+- **load_balancer**: allow creating load balancers with primary ips (#1544) ([024a6f0](https://github.com/hetznercloud/terraform-provider-hcloud/commit/024a6f0118d7aa968f141dc71b6638e8ac0e5544))
+
+## [v1.69.0](https://github.com/hetznercloud/terraform-provider-hcloud/releases/tag/v1.69.0)
+
+[Compare to previous version](https://github.com/hetznercloud/terraform-provider-hcloud/compare/v1.68.0...v1.69.0)
+
+### Features
+
+- **image**: add deprecation info to data sources (#1529) ([abfc55a](https://github.com/hetznercloud/terraform-provider-hcloud/commit/abfc55a6a7702d03e094e30cd06849feecf86e24))
+- drop support for terraform v1.14 (#1531) ([67e5c0c](https://github.com/hetznercloud/terraform-provider-hcloud/commit/67e5c0cf18fc969ede64c28bac67cd6d5a504d13))
+- add support for terraform v1.16 (#1531) ([67e5c0c](https://github.com/hetznercloud/terraform-provider-hcloud/commit/67e5c0cf18fc969ede64c28bac67cd6d5a504d13))
+
+### Bug Fixes
+
+- **server**: only write `ipv6_network` value to state if defined (#1526) ([c7ffc2f](https://github.com/hetznercloud/terraform-provider-hcloud/commit/c7ffc2f0b7f1e2d7ce455d4070ec3fb6b072f153))
+
+## [v1.68.0](https://github.com/hetznercloud/terraform-provider-hcloud/releases/tag/v1.68.0)
+
+[Compare to previous version](https://github.com/hetznercloud/terraform-provider-hcloud/compare/v1.67.0...v1.68.0)
+
+### Features
+
+- **load_balancer_type**: add deprecation details and warnings (#1512) ([44a81e1](https://github.com/hetznercloud/terraform-provider-hcloud/commit/44a81e1431428444325c8a253a19bafa510ea73d))
+- **server_type**: add deprecation warnings (#1512) ([44a81e1](https://github.com/hetznercloud/terraform-provider-hcloud/commit/44a81e1431428444325c8a253a19bafa510ea73d))
+
+### Bug Fixes
+
+- **zone_record**: set identity after read/update (#1507) ([daf4b85](https://github.com/hetznercloud/terraform-provider-hcloud/commit/daf4b858c6f97b44d77beef9f3a625bf00b28780))
+
+## [v1.67.0](https://github.com/hetznercloud/terraform-provider-hcloud/releases/tag/v1.67.0)
+
+[Compare to previous version](https://github.com/hetznercloud/terraform-provider-hcloud/compare/v1.66.1...v1.67.0)
+
+### Removed datacenter from Server and Primary IP
+
+The deprecated `datacenter` attribute was marked for removal from the Server and Primary IP resources/data sources. You must use the `location` attribute instead. Since the property was already removed from the Hetzner Cloud API, we do not consider this a breaking change (see [changelog entry](https://docs.hetzner.cloud/changelog#2026-07-01-removing-datacenters)).
+
+> [!IMPORTANT]
+> **Action required:** Please update all configuration that uses the `datacenter` attribute to use the `location` attribute instead.
+
+**Before:**
+
+```tf
+resource "hcloud_server" "main" {
+  // ...
+  datacenter = "hel1-dc1"
+}
+
+resource "hcloud_primary_ip" "main" {
+  // ...
+  datacenter = "hel1-dc1"
+}
+```
+
+**After:**
+
+```tf
+resource "hcloud_server" "main" {
+  // ...
+  location = "hel1"
+}
+
+resource "hcloud_primary_ip" "main" {
+  // ...
+  location = "hel1"
+}
+```
+
+### Features
+
+- remove `datacenter` from primary ips and servers (#1501) ([59a48f5](https://github.com/hetznercloud/terraform-provider-hcloud/commit/59a48f599e1477c3f973f06450e9108655ce15d0))
+
+### Bug Fixes
+
+- **server**: do not validate unknown network config (#1493) ([f180913](https://github.com/hetznercloud/terraform-provider-hcloud/commit/f180913124d3df58a25d68e49df671c40194473f))
+
+## [v1.66.1](https://github.com/hetznercloud/terraform-provider-hcloud/releases/tag/v1.66.1)
+
+[Compare to previous version](https://github.com/hetznercloud/terraform-provider-hcloud/compare/v1.66.0...v1.66.1)
+
+### Bug Fixes
+
+- **primary_ip**: only validate assignee attributes when known (#1487) ([8fc1a69](https://github.com/hetznercloud/terraform-provider-hcloud/commit/8fc1a690182cdef2d8a7c44fefd97ead7099b189))
+- **server**: inconsistent image attribute when using data source (#1489) ([3fefa12](https://github.com/hetznercloud/terraform-provider-hcloud/commit/3fefa1241435a7760f5ee06663e3d6fa9b9ce7d4))
+
+## [v1.66.0](https://github.com/hetznercloud/terraform-provider-hcloud/releases/tag/v1.66.0)
+
+### Datacenter data sources are deprecated
+
+The `hcloud_datacenter` and `hcloud_datacenters` data sources are deprecated and will be removed after 1 Oct. 2026. After this date, requests to the datacenters API endpoints will return `HTTP 410 Gone`.
+
+Please use the `hcloud_location` and `hcloud_locations` data sources instead.
+
+See the [changelog](https://docs.hetzner.cloud/changelog#2026-06-02-datacenters-deprecated) for more details.
+
+### Features
+
+- **image**: warn when using a deprecated image (#1456)
+- deprecate `hcloud_datacenter(s)` data sources (#1463)
+
+### Bug Fixes
+
+- handle invalid input errors without details (#1453)
+
+## [v1.65.0](https://github.com/hetznercloud/terraform-provider-hcloud/releases/tag/v1.65.0)
+
+### Features
+
+- **primary-ip**: make `auto_delete` attribute optional (#1429)
+- **server**: remove `allow_deprecated_images` from `hcloud_server` (#1435)
+
+### Bug Fixes
+
+- **primary-ip**: do not update assignee on unknown assignee_type (#1440)
+
+## [v1.64.0](https://github.com/hetznercloud/terraform-provider-hcloud/releases/tag/v1.64.0)
+
+### Features
+
+- **load-balancer**: support `timeout_idle` http service attribute (#1398)
+- drop support for terraform v1.13 (#1418)
+- add support for terraform v1.15 (#1418)
+- drop support for opentofu v1.9 (#1420)
+- add support for opentofu v1.12 (#1420)
+
+### Bug Fixes
+
+- **rdns**: gracefully handle not found errors (#1419)
+- **server**: handle ipv6 when removing public net block (#1427)
+- **server**: allow both `network_id` and `subnet_id` to be defined (#1430)
+
+## [v1.63.0](https://github.com/hetznercloud/terraform-provider-hcloud/releases/tag/v1.63.0)
+
+### Features
+
+- **server**: add subnet_id support (#1278)
+
+## [v1.62.0](https://github.com/hetznercloud/terraform-provider-hcloud/releases/tag/v1.62.0)
+
+### Primary IPs `assignee_type` behavior change
+
+The `hcloud_primary_ip` resource will now:
+
+- raise a warning if `assignee_type` attribute is configured without `assignee_id` attribute
+- raise an error if `assignee_id` attribute is configured without `assignee_type` attribute
+
+As of 1 August 2026, the behavior of the Primary IP `assignee_type` property will change, and will return `unassigned` when the Primary IP is not assigned (when `assignee_id` is `null`). The goal is to eventually assign Primary IPs to other resource types, not only to `server`.
+
+See the [changelog](https://docs.hetzner.cloud/changelog#2026-04-27-primary-ips-will-return-unassigned) for more details.
+
+In addition, the Primary IP request body `assignee_type` property of the operation [`POST /v1/primary_ips`](https://docs.hetzner.cloud/reference/cloud#tag/primary-ips/create_primary_ip) is now optional. Primary IPs created without `assignee_type` return `server` until 1 August 2026, after this date, its value will be `unassigned`.
+
+See the [changelog](https://docs.hetzner.cloud/changelog#2026-04-27-primary-ips-make-assignee_type-optional) for more details.
+
+### Features
+
+- **primary-ip**: `assignee_type` attribute is now optional (#1395)
+
+### Bug Fixes
+
+- **firewall**: apply_to update removes firewall from state when target resource is not found (#1380)
+
+## [v1.61.0](https://github.com/hetznercloud/terraform-provider-hcloud/releases/tag/v1.61.0)
+
+### Available and recommended Server Types have been moved
+
+- Data sources `hcloud_datacenter`/`hcloud_datacenters[]`: Attributes `supported_server_type_ids[]` and `available_server_type_ids[]` have been deprecated.
+- Data sources `hcloud_server_type`/`hcloud_server_types[]`: Attributes `locations[].available` and `locations[].recommended` have been added as a replacement for the deprecated datacenter attributes.
+
+See the [changelog](https://docs.hetzner.cloud/changelog#2026-04-01-datacenter-deprecations) for more details.
+
+### Features
+
+- **server**: implement actions for poweron, poweroff, reset, and reboot (#1342)
+- **datacenter, server_type**: move available and recommended to server_type (#1378)
+
+### Bug Fixes
+
+- **primary-ip**: reassigning fails as IP needs to be unassigned first (#1353)
+- **primary-ip**: unassign before deleting a primary ip (#1384)
+- include response correlation id in api error diagnostics (#1386)
+
 ## [v1.60.1](https://github.com/hetznercloud/terraform-provider-hcloud/releases/tag/v1.60.1)
 
 ### Bug Fixes

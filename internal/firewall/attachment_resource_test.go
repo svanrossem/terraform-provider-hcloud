@@ -9,6 +9,7 @@ import (
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/firewall"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/server"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/teste2e"
+	"github.com/hetznercloud/terraform-provider-hcloud/internal/testmux"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/testsupport"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/testtemplate"
 )
@@ -34,7 +35,7 @@ func TestAccFirewallAttachmentResource_Servers(t *testing.T) {
 	tmplMan := testtemplate.Manager{}
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:                 teste2e.PreCheck(t),
-		ProtoV6ProviderFactories: teste2e.ProtoV6ProviderFactories(),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
 		CheckDestroy: resource.ComposeAggregateTestCheckFunc(
 			testsupport.CheckResourcesDestroyed(server.ResourceType, server.ByID(t, &srv)),
 			testsupport.CheckResourcesDestroyed(firewall.ResourceType, firewall.ByID(t, &fw)),
@@ -54,12 +55,7 @@ func TestAccFirewallAttachmentResource_Servers(t *testing.T) {
 			},
 			{
 				ResourceName: fwAttRes.TFID(),
-				Config: tmplMan.Render(t,
-					"testdata/r/hcloud_server", srvRes,
-					"testdata/r/hcloud_firewall", fwRes,
-					"testdata/r/hcloud_firewall_attachment", fwAttRes,
-				),
-				ImportState: true,
+				ImportState:  true,
 			},
 		},
 	})
@@ -89,7 +85,7 @@ func TestAccFirewallAttachmentResource_LabelSelectors(t *testing.T) {
 	tmplMan := testtemplate.Manager{}
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:                 teste2e.PreCheck(t),
-		ProtoV6ProviderFactories: teste2e.ProtoV6ProviderFactories(),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
 		CheckDestroy: resource.ComposeAggregateTestCheckFunc(
 			testsupport.CheckResourcesDestroyed(server.ResourceType, server.ByID(t, &srv)),
 			testsupport.CheckResourcesDestroyed(firewall.ResourceType, firewall.ByID(t, &fw)),
@@ -109,12 +105,7 @@ func TestAccFirewallAttachmentResource_LabelSelectors(t *testing.T) {
 			},
 			{
 				ResourceName: fwAttRes.TFID(),
-				Config: tmplMan.Render(t,
-					"testdata/r/hcloud_server", srvRes,
-					"testdata/r/hcloud_firewall", fwRes,
-					"testdata/r/hcloud_firewall_attachment", fwAttRes,
-				),
-				ImportState: true,
+				ImportState:  true,
 			},
 		},
 	})

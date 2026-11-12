@@ -2,7 +2,6 @@ package certificate_test
 
 import (
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
@@ -11,14 +10,9 @@ import (
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/certificate"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/teste2e"
+	"github.com/hetznercloud/terraform-provider-hcloud/internal/testmux"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/testsupport"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/testtemplate"
-)
-
-var (
-	// Tests using this value should skip if empty.
-	// The domain specified here must be available in Hetzner DNS of the account running the tests.
-	certDomain = os.Getenv("CERT_DOMAIN")
 )
 
 func TestAccCertificateResource_Uploaded(t *testing.T) {
@@ -31,7 +25,7 @@ func TestAccCertificateResource_Uploaded(t *testing.T) {
 	// Not parallel because number of certificates per domain is limited
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 teste2e.PreCheck(t),
-		ProtoV6ProviderFactories: teste2e.ProtoV6ProviderFactories(),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
 		CheckDestroy:             testsupport.CheckResourcesDestroyed(certificate.UploadedResourceType, certificate.ByID(t, &cert)),
 		Steps: []resource.TestStep{
 			{
@@ -74,11 +68,14 @@ func TestAccCertificateResource_Uploaded_ChangeCertRequiresNewResource(t *testin
 	}
 	resOtherCert := &certificate.RDataUploaded{Name: res.Name, PrivateKey: rKey, Certificate: rCert}
 	resOtherCert.SetRName(res.Name)
+	// Prevents name collision with create before destroy lifecycle
+	resOtherCert.Name = "basic-cert-v2"
+
 	tmplMan := testtemplate.Manager{}
 	// Not parallel because number of certificates per domain is limited
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 teste2e.PreCheck(t),
-		ProtoV6ProviderFactories: teste2e.ProtoV6ProviderFactories(),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
 		CheckDestroy:             testsupport.CheckResourcesDestroyed(certificate.UploadedResourceType, certificate.ByID(t, &cert)),
 		Steps: []resource.TestStep{
 			{
@@ -87,8 +84,7 @@ func TestAccCertificateResource_Uploaded_ChangeCertRequiresNewResource(t *testin
 				Config: tmplMan.Render(t, "testdata/r/hcloud_uploaded_certificate", res),
 				Check: resource.ComposeTestCheckFunc(
 					testsupport.CheckResourceExists(res.TFID(), certificate.ByID(t, &cert)),
-					resource.TestCheckResourceAttr(res.TFID(), "name",
-						fmt.Sprintf("basic-cert--%d", tmplMan.RandInt)),
+					resource.TestCheckResourceAttr(res.TFID(), "name", fmt.Sprintf("basic-cert--%d", tmplMan.RandInt)),
 					resource.TestCheckResourceAttr(res.TFID(), "private_key", res.PrivateKey),
 					resource.TestCheckResourceAttr(res.TFID(), "certificate", res.Certificate),
 				),
@@ -100,10 +96,8 @@ func TestAccCertificateResource_Uploaded_ChangeCertRequiresNewResource(t *testin
 					"testdata/r/hcloud_uploaded_certificate", resOtherCert,
 				),
 				Check: resource.ComposeAggregateTestCheckFunc(
-
 					testsupport.CheckResourceExists(res.TFID(), certificate.ByID(t, &newCert)),
-					resource.TestCheckResourceAttr(resOtherCert.TFID(), "name",
-						fmt.Sprintf("basic-cert--%d", tmplMan.RandInt)),
+					resource.TestCheckResourceAttr(resOtherCert.TFID(), "name", fmt.Sprintf("basic-cert-v2--%d", tmplMan.RandInt)),
 					resource.TestCheckResourceAttr(resOtherCert.TFID(), "private_key", rKey),
 					resource.TestCheckResourceAttr(resOtherCert.TFID(), "certificate", rCert),
 					testsupport.LiftTCF(isAnotherCert(&newCert, &cert)),
@@ -114,14 +108,14 @@ func TestAccCertificateResource_Uploaded_ChangeCertRequiresNewResource(t *testin
 }
 
 func TestAccCertificateResource_Managed(t *testing.T) {
-	if certDomain == "" {
-		t.Skip("Skipping because CERT_DOMAIN is not set")
+	if teste2e.TestCertificateDomain == "" {
+		t.Skip("Skipping because TEST_CERTIFICATE_DOMAIN is not set")
 	}
 
 	var cert hcloud.Certificate
 
 	res := certificate.NewManagedRData(t, "basic-managed-cert", []string{
-		fmt.Sprintf("tftest-%d.%s", acctest.RandInt(), certDomain),
+		fmt.Sprintf("tftest-%d.%s", acctest.RandInt(), teste2e.TestCertificateDomain),
 	})
 	resRenamed := &certificate.RDataManaged{
 		Name:        res.Name + "-renamed",
@@ -133,7 +127,7 @@ func TestAccCertificateResource_Managed(t *testing.T) {
 	// Not parallel because number of certificates per domain is limited
 	resource.Test(t, resource.TestCase{
 		PreCheck:                 teste2e.PreCheck(t),
-		ProtoV6ProviderFactories: teste2e.ProtoV6ProviderFactories(),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
 		CheckDestroy:             testsupport.CheckResourcesDestroyed(certificate.ManagedResourceType, certificate.ByID(t, &cert)),
 		Steps: []resource.TestStep{
 			{

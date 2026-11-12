@@ -20,18 +20,18 @@ func TestAPIErrorDiagnostics(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
 		err           error
-		errRaw        map[string]interface{}
+		errRaw        map[string]any
 		errStatusCode int
 		diagnostics   diag.Diagnostics
 	}{
 		{
 			name: "hcloud invalid input error",
-			errRaw: map[string]interface{}{
-				"error": map[string]interface{}{
+			errRaw: map[string]any{
+				"error": map[string]any{
 					"code":    "invalid_input",
 					"message": "something is fishy",
-					"details": map[string]interface{}{
-						"fields": []map[string]interface{}{
+					"details": map[string]any{
+						"fields": []map[string]any{
 							{"name": "foobar", "messages": []string{"must be bar", "foo too long"}},
 						},
 					},
@@ -55,13 +55,35 @@ Status code: 400
 			},
 		},
 		{
+			name: "hcloud invalid input error without details",
+			errRaw: map[string]any{
+				"error": map[string]any{
+					"code":    "invalid_input",
+					"message": "something is fishy",
+					"details": nil,
+				},
+			},
+			errStatusCode: http.StatusBadRequest,
+			diagnostics: []diag.Diagnostic{
+				diag.NewErrorDiagnostic(
+					"Invalid field in API request",
+					`An invalid field was encountered during an API request. The field might not map 1:1 to your terraform resource.
+
+something is fishy (invalid_input)
+
+Error code: invalid_input
+Status code: 400
+`),
+			},
+		},
+		{
 			name: "hcloud error",
 			err: hcloud.Error{
 				Code:    hcloud.ErrorCodeRateLimitExceeded,
 				Message: "rate limit exceeded",
 			},
-			errRaw: map[string]interface{}{
-				"error": map[string]interface{}{
+			errRaw: map[string]any{
+				"error": map[string]any{
 					"code":    "rate_limit_exceeded",
 					"message": "rate limit exceeded",
 				},
@@ -72,7 +94,7 @@ Status code: 400
 					"API request failed",
 					`An unexpected error was encountered during an API request.
 
-rate limit exceeded
+rate limit exceeded (rate_limit_exceeded)
 
 Error code: rate_limit_exceeded
 Status code: 429
@@ -108,7 +130,7 @@ something broke :(
 
 // hcloudErrorFromErrorAndStatus is a hack to fill the private field `hcloud.Error.response` with a sensible response
 // so we can fully test the logged error messages.
-func hcloudErrorFromErrorAndStatus(errRaw map[string]interface{}, statusCode int) error {
+func hcloudErrorFromErrorAndStatus(errRaw map[string]any, statusCode int) error {
 	mux := http.NewServeMux()
 	server := httptest.NewServer(mux)
 	defer server.Close()
@@ -151,6 +173,26 @@ func TestNotFoundDiagnostics(t *testing.T) {
 			name:     "ssh key with name",
 			actual:   NotFoundDiagnostic("ssh_key", "name", "my-ssh-key"),
 			expected: diag.NewErrorDiagnostic("Resource not found", "Resource (ssh_key) was not found: name=my-ssh-key"),
+		},
+		{
+			name:     "ssh key with 1 arg",
+			actual:   NotFoundDiagnostic("ssh_key", "arg1"),
+			expected: diag.NewErrorDiagnostic("Resource not found", "Resource (ssh_key) was not found: arg1"),
+		},
+		{
+			name:     "ssh key with 2 args",
+			actual:   NotFoundDiagnostic("ssh_key", "arg1", "arg2"),
+			expected: diag.NewErrorDiagnostic("Resource not found", "Resource (ssh_key) was not found: arg1=arg2"),
+		},
+		{
+			name:     "ssh key with 3 args",
+			actual:   NotFoundDiagnostic("ssh_key", "arg1", "arg2", "arg3"),
+			expected: diag.NewErrorDiagnostic("Resource not found", "Resource (ssh_key) was not found: arg1 arg2=arg3"),
+		},
+		{
+			name:     "ssh key with 4 args",
+			actual:   NotFoundDiagnostic("ssh_key", "arg1", "arg2", "arg3", "arg4"),
+			expected: diag.NewErrorDiagnostic("Resource not found", "Resource (ssh_key) was not found: arg1=arg2 arg3=arg4"),
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {

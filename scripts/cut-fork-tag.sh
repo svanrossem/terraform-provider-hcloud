@@ -53,16 +53,16 @@ if [[ ! "$upstream_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
-if git rev-parse -q --verify "refs/upstream-tags/$upstream_tag" >/dev/null; then
+if git rev-parse -q --verify "refs/upstream-tags/$upstream_tag" > /dev/null; then
   base_ref="refs/upstream-tags/$upstream_tag"
-elif git rev-parse -q --verify "refs/tags/$upstream_tag" >/dev/null; then
+elif git rev-parse -q --verify "refs/tags/$upstream_tag" > /dev/null; then
   base_ref="refs/tags/$upstream_tag"
 else
   echo "error: tag $upstream_tag not found (did you fetch upstream --tags?)" >&2
   exit 1
 fi
 
-if git rev-parse -q --verify "refs/tags/$fork_tag" >/dev/null; then
+if git rev-parse -q --verify "refs/tags/$fork_tag" > /dev/null; then
   echo "$fork_tag already exists, skipping."
   exit 0
 fi
@@ -93,7 +93,7 @@ if ! git merge "origin/$FEATURE_BRANCH" --no-edit; then
     echo "git tag -a ${fork_tag} -m \"Fork release of upstream ${upstream_tag}, includes ${FEATURE_BRANCH}\""
     echo "git push origin ${fork_tag}"
     echo '```'
-  } >"$body_file"
+  } > "$body_file"
 
   gh issue create --title "$issue_title" --body-file "$body_file" --assignee @copilot
   exit 0

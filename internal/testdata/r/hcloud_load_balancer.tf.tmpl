@@ -1,6 +1,6 @@
 {{- /* vim: set ft=terraform: */ -}}
 
-resource "hcloud_load_balancer" "{{ .Name }}" {
+resource "hcloud_load_balancer" "{{ .RName }}" {
   {{/* Required properties */ -}}
   name               = "{{ .Name }}--{{ .RInt }}"
   load_balancer_type = "{{ if .Type }}{{ .Type }}{{ else }}lb11{{ end }}"
@@ -12,6 +12,13 @@ resource "hcloud_load_balancer" "{{ .Name }}" {
   {{ end }}
 
   {{- /* Optional properties */}}
+  {{- if .IPv4ID }}
+  ipv4_id = {{ .IPv4ID }}
+  {{ end }}
+  {{- if .IPv6ID }}
+  ipv6_id = {{ .IPv6ID }}
+  {{ end }}
+
   {{- if .Algorithm }}
   algorithm {
     type = "{{ .Algorithm }}"

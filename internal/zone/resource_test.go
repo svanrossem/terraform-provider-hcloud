@@ -9,6 +9,7 @@ import (
 	"github.com/hetznercloud/hcloud-go/v2/hcloud/exp/kit/randutil"
 	"github.com/hetznercloud/hcloud-go/v2/hcloud/schema"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/teste2e"
+	"github.com/hetznercloud/terraform-provider-hcloud/internal/testmux"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/testsupport"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/testtemplate"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/zone"
@@ -46,7 +47,7 @@ func TestAccZoneResource_Primary(t *testing.T) {
 
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:                 teste2e.PreCheck(t),
-		ProtoV6ProviderFactories: teste2e.ProtoV6ProviderFactories(),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
 		CheckDestroy:             testsupport.CheckAPIResourceAllAbsent(zone.ResourceType, zone.GetAPIResource()),
 		Steps: []resource.TestStep{
 			{
@@ -60,7 +61,7 @@ func TestAccZoneResource_Primary(t *testing.T) {
 					resource.TestCheckResourceAttr(res1.TFID(), "primary_nameservers.#", "0"),
 					resource.TestCheckResourceAttr(res1.TFID(), "delete_protection", "true"),
 					resource.TestCheckResourceAttr(res1.TFID(), "authoritative_nameservers.assigned.#", "3"),
-					resource.TestCheckResourceAttr(res1.TFID(), "registrar", "other"),
+					resource.TestMatchResourceAttr(res1.TFID(), "registrar", zone.RegistrarRegexp),
 				),
 			},
 			{
@@ -80,7 +81,7 @@ func TestAccZoneResource_Primary(t *testing.T) {
 					resource.TestCheckResourceAttr(res2.TFID(), "primary_nameservers.#", "0"),
 					resource.TestCheckResourceAttr(res2.TFID(), "delete_protection", "false"),
 					resource.TestCheckResourceAttr(res1.TFID(), "authoritative_nameservers.assigned.#", "3"),
-					resource.TestCheckResourceAttr(res1.TFID(), "registrar", "other"),
+					resource.TestMatchResourceAttr(res1.TFID(), "registrar", zone.RegistrarRegexp),
 				),
 			},
 			{
@@ -94,7 +95,7 @@ func TestAccZoneResource_Primary(t *testing.T) {
 					resource.TestCheckResourceAttr(res3.TFID(), "primary_nameservers.#", "0"),
 					resource.TestCheckResourceAttr(res3.TFID(), "delete_protection", "false"),
 					resource.TestCheckResourceAttr(res1.TFID(), "authoritative_nameservers.assigned.#", "3"),
-					resource.TestCheckResourceAttr(res1.TFID(), "registrar", "other"),
+					resource.TestMatchResourceAttr(res1.TFID(), "registrar", zone.RegistrarRegexp),
 				),
 			},
 		},
@@ -130,7 +131,7 @@ func TestAccZoneResource_Secondary(t *testing.T) {
 
 	resource.ParallelTest(t, resource.TestCase{
 		PreCheck:                 teste2e.PreCheck(t),
-		ProtoV6ProviderFactories: teste2e.ProtoV6ProviderFactories(),
+		ProtoV6ProviderFactories: testmux.ProtoV6ProviderFactories(),
 		CheckDestroy:             testsupport.CheckAPIResourceAllAbsent(zone.ResourceType, zone.GetAPIResource()),
 		Steps: []resource.TestStep{
 			{
@@ -148,7 +149,7 @@ func TestAccZoneResource_Secondary(t *testing.T) {
 					resource.TestCheckResourceAttr(res1.TFID(), "primary_nameservers.1.port", "5353"),
 					resource.TestCheckResourceAttr(res1.TFID(), "delete_protection", "false"),
 					resource.TestCheckResourceAttr(res1.TFID(), "authoritative_nameservers.assigned.#", "3"),
-					resource.TestCheckResourceAttr(res1.TFID(), "registrar", "other"),
+					resource.TestMatchResourceAttr(res1.TFID(), "registrar", zone.RegistrarRegexp),
 				),
 			},
 			{
@@ -172,7 +173,7 @@ func TestAccZoneResource_Secondary(t *testing.T) {
 					resource.TestCheckResourceAttr(res1.TFID(), "primary_nameservers.1.port", "5353"),
 					resource.TestCheckResourceAttr(res1.TFID(), "delete_protection", "false"),
 					resource.TestCheckResourceAttr(res1.TFID(), "authoritative_nameservers.assigned.#", "3"),
-					resource.TestCheckResourceAttr(res1.TFID(), "registrar", "other"),
+					resource.TestMatchResourceAttr(res1.TFID(), "registrar", zone.RegistrarRegexp),
 				),
 			},
 		},

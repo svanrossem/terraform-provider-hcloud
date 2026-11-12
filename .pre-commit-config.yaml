@@ -29,7 +29,7 @@ repos:
         language: node
         types: [text]
         require_serial: false
-        additional_dependencies: [prettier@3.8.1]
+        additional_dependencies: [prettier@3.9.10]
         files: \.(md|ya?ml)$
         exclude: ^(CHANGELOG.md|docs/.*)$
 
@@ -39,7 +39,7 @@ repos:
         name: shfmt
         description: Format shell scripts with shfmt
         language: golang
-        additional_dependencies: [mvdan.cc/sh/v3/cmd/shfmt@v3.12.0]
+        additional_dependencies: [mvdan.cc/sh/v3/cmd/shfmt@v3.14.1]
         entry: shfmt -i 2 -ci -sr -kp -w
         types: [shell]
 
@@ -67,3 +67,11 @@ repos:
         entry: make generate
         pass_filenames: false
         files: (^examples/|\.go$)
+
+  - repo: local
+    hooks:
+      - id: go-fix
+        name: go fix
+        language: golang
+        entry: go fix ./...
+        pass_filenames: false

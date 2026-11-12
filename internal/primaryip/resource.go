@@ -2,437 +2,484 @@ package primaryip
 
 import (
 	"context"
-	"log"
-	"math/rand"
 	"strconv"
-	"strings"
 
-	"github.com/hashicorp/go-cty/cty"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-framework-validators/resourcevalidator"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 
 	"github.com/hetznercloud/hcloud-go/v2/hcloud"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/util"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/util/control"
 	"github.com/hetznercloud/terraform-provider-hcloud/internal/util/hcloudutil"
+	"github.com/hetznercloud/terraform-provider-hcloud/internal/util/resourceutil"
+	"github.com/hetznercloud/terraform-provider-hcloud/internal/util/validateutil"
 )
 
-// ResourceType is the type name of the Hetzner Cloud PrimaryIP resource.
 const ResourceType = "hcloud_primary_ip"
 
-// Resource creates a new Terraform schema for the hcloud_primary_ip resource.
-func Resource() *schema.Resource {
-	locationAttributes := []string{"location", "datacenter", "assignee_id"}
+var _ resource.Resource = (*Resource)(nil)
+var _ resource.ResourceWithConfigure = (*Resource)(nil)
+var _ resource.ResourceWithConfigValidators = (*Resource)(nil)
+var _ resource.ResourceWithValidateConfig = (*Resource)(nil)
+var _ resource.ResourceWithImportState = (*Resource)(nil)
 
-	return &schema.Resource{
-		CreateContext: resourcePrimaryIPCreate,
-		ReadContext:   resourcePrimaryIPRead,
-		UpdateContext: resourcePrimaryIPUpdate,
-		DeleteContext: resourcePrimaryIPDelete,
-		Importer: &schema.ResourceImporter{
-			StateContext: schema.ImportStatePassthroughContext,
+type Resource struct {
+	client *hcloud.Client
+}
+
+func NewResource() resource.Resource {
+	return &Resource{}
+}
+
+func (r *Resource) Metadata(_ context.Context, _ resource.MetadataRequest, resp *resource.MetadataResponse) {
+	resp.TypeName = ResourceType
+}
+
+func (r *Resource) Configure(_ context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	var newDiags diag.Diagnostics
+
+	r.client, newDiags = hcloudutil.ConfigureClient(req.ProviderData)
+	resp.Diagnostics.Append(newDiags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+}
+
+func (r *Resource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
+	resp.Schema.MarkdownDescription = util.MarkdownDescription(`
+Provides a Hetzner Cloud Primary IP resource.
+
+See the [Primary IP API documentation](https://docs.hetzner.cloud/reference/cloud#tag/primary-ips) for more details.
+
+## Deprecations
+
+### ''datacenter'' attribute
+
+The ''datacenter'' attribute is marked for removal since ''v1.67.0'', you must use the ''location'' attribute instead.
+
+See our [deprecation](https://docs.hetzner.cloud/changelog#2025-12-16-phasing-out-datacenters) and
+[removal](https://docs.hetzner.cloud/changelog#2026-07-01-removing-datacenters) changelog for more details.
+`)
+
+	resp.Schema.Attributes = map[string]schema.Attribute{
+		"id": schema.Int64Attribute{
+			MarkdownDescription: "ID of the Primary IP.",
+			Computed:            true,
+			PlanModifiers: []planmodifier.Int64{
+				int64planmodifier.UseStateForUnknown(),
+			},
 		},
-		Schema: map[string]*schema.Schema{
-			"type": {
-				Type:     schema.TypeString,
-				Required: true,
-				ForceNew: true,
+		"name": schema.StringAttribute{
+			MarkdownDescription: "Name of the Primary IP.",
+			Required:            true,
+		},
+		"type": schema.StringAttribute{
+			MarkdownDescription: "Type of the Primary IP (`ipv4` or `ipv6`).",
+			Required:            true,
+			PlanModifiers: []planmodifier.String{
+				stringplanmodifier.RequiresReplace(),
 			},
-			"name": {
-				Type:     schema.TypeString,
-				Optional: true,
-				Computed: true,
+		},
+		"location": schema.StringAttribute{
+			MarkdownDescription: "Name of the Location for the Primary IP. See the [Hetzner Docs](https://docs.hetzner.com/cloud/general/locations/#what-locations-are-there) for more details about locations.",
+			Optional:            true,
+			Computed:            true,
+			PlanModifiers: []planmodifier.String{
+				stringplanmodifier.RequiresReplace(),
+				stringplanmodifier.UseStateForUnknown(),
 			},
-			"location": {
-				Type:         schema.TypeString,
-				ForceNew:     true,
-				Optional:     true,
-				Computed:     true,
-				ExactlyOneOf: locationAttributes,
+		},
+		"datacenter": schema.StringAttribute{
+			MarkdownDescription: "Name of the Datacenter for the Primary IP. See the [Hetzner Docs](https://docs.hetzner.com/cloud/general/locations/#what-datacenters-are-there) for more details about datacenters.",
+			Optional:            true,
+			Computed:            true,
+			DeprecationMessage:  datacenterDeprecationMessage,
+			Validators:          []validator.String{validateutil.IsRemoved(datacenterDeprecationMessage)},
+		},
+		"assignee_id": schema.Int64Attribute{
+			MarkdownDescription: "ID of the resource the Primary IP should be assigned to.",
+			Optional:            true,
+			Computed:            true,
+		},
+		"assignee_type": schema.StringAttribute{
+			MarkdownDescription: "Type of the resource the Primary IP should be assigned to.",
+			Optional:            true,
+			Computed:            true,
+		},
+		"auto_delete": schema.BoolAttribute{
+			MarkdownDescription: "Whether auto delete is enabled. Setting `auto_delete` to `true` is not recommended, because if a server assigned to the managed ip is deleted, it will also delete the primary IP which will break the terraform state.",
+			Optional:            true,
+			Computed:            true,
+			Default:             booldefault.StaticBool(false),
+		},
+		"labels": resourceutil.LabelsSchema(),
+		"delete_protection": schema.BoolAttribute{
+			MarkdownDescription: " Whether delete protection is enabled.",
+			Optional:            true,
+			Computed:            true,
+			Default:             booldefault.StaticBool(false),
+		},
+		"ip_address": schema.StringAttribute{
+			MarkdownDescription: "IP address of the Primary IP.",
+			Computed:            true,
+			PlanModifiers: []planmodifier.String{
+				stringplanmodifier.UseStateForUnknown(),
 			},
-			"datacenter": {
-				Type:         schema.TypeString,
-				ForceNew:     true,
-				Optional:     true,
-				Computed:     true,
-				Deprecated:   "The datacenter attribute is deprecated and will be removed after 1 July 2026. Please use the location attribute instead. See https://docs.hetzner.cloud/changelog#2025-12-16-phasing-out-datacenters.",
-				ExactlyOneOf: locationAttributes,
-			},
-			"assignee_id": {
-				Type:         schema.TypeInt,
-				Optional:     true,
-				Computed:     true,
-				ExactlyOneOf: locationAttributes,
-			},
-			"assignee_type": {
-				Type:     schema.TypeString,
-				Required: true,
-			},
-			"ip_address": {
-				Type:     schema.TypeString,
-				Computed: true,
-			},
-			"ip_network": {
-				Type:     schema.TypeString,
-				Computed: true,
-			},
-			"auto_delete": {
-				Type:     schema.TypeBool,
-				Required: true,
-			},
-			"labels": {
-				Type:     schema.TypeMap,
-				Optional: true,
-				ValidateDiagFunc: func(i interface{}, path cty.Path) diag.Diagnostics { // nolint:revive
-					if ok, err := hcloud.ValidateResourceLabels(i.(map[string]interface{})); !ok {
-						return diag.FromErr(err)
-					}
-					return nil
-				},
-			},
-			"delete_protection": {
-				Type:     schema.TypeBool,
-				Optional: true,
-				Default:  false,
+		},
+		"ip_network": schema.StringAttribute{
+			MarkdownDescription: "IP network of the Primary IP for IPv6 addresses. Only set if `type` is `ipv6`.",
+			Computed:            true,
+			PlanModifiers: []planmodifier.String{
+				stringplanmodifier.UseStateForUnknown(),
 			},
 		},
 	}
 }
 
-func resourcePrimaryIPCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	client := m.(*hcloud.Client)
+func (r *Resource) ConfigValidators(_ context.Context) []resource.ConfigValidator {
+	return []resource.ConfigValidator{
+		resourcevalidator.ExactlyOneOf(
+			path.MatchRoot("location"),
+			path.MatchRoot("assignee_id"),
+		),
+	}
+}
+
+func (r *Resource) ValidateConfig(ctx context.Context, req resource.ValidateConfigRequest, resp *resource.ValidateConfigResponse) {
+	var data model
+
+	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Raise errors/warnings for the assignee_type and assignee_id attributes. We cannot
+	// leverage [resourcevalidator.RequiredTogether] without introducing a breaking
+	// change, so we raise errors/warnings here.
+	if !data.AssigneeID.IsUnknown() && !data.AssigneeType.IsUnknown() {
+		if !data.AssigneeID.IsNull() && data.AssigneeType.IsNull() {
+			resp.Diagnostics.AddAttributeError(
+				path.Root("assignee_id"),
+				"Invalid Attribute Combination",
+				"These attributes must be configured together: [assignee_id,assignee_type]",
+			)
+		}
+
+		if !data.AssigneeType.IsNull() && data.AssigneeID.IsNull() {
+			resp.Diagnostics.AddAttributeWarning(
+				path.Root("assignee_type"),
+				"Unused Attribute",
+				"This attribute is now optional and is only required together with the assignee_id attribute. Please remove it from your configuration.",
+			)
+		}
+	}
+}
+
+func (r *Resource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
+	var data model
+
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	opts := hcloud.PrimaryIPCreateOpts{
-		Type:         hcloud.PrimaryIPType(d.Get("type").(string)),
-		AssigneeType: d.Get("assignee_type").(string),
-		AutoDelete:   hcloud.Ptr(d.Get("auto_delete").(bool)),
-	}
-	if name, ok := d.GetOk("name"); ok {
-		opts.Name = name.(string)
+		Name: data.Name.ValueString(),
+		Type: hcloud.PrimaryIPType(data.Type.ValueString()),
 	}
 
-	if assigneeID, ok := d.GetOk("assignee_id"); ok {
-		opts.AssigneeID = hcloud.Ptr(util.CastInt64(assigneeID))
-	} else if location, ok := d.GetOk("location"); ok {
-		opts.Location = location.(string)
-	} else if datacenter, ok := d.GetOk("datacenter"); ok {
-		// Backward compatible datacenter argument.
-		// datacenter hel1-dc2 => location hel1
-		parts := strings.Split(datacenter.(string), "-")
-
-		if len(parts) != 2 {
-			return diag.Errorf("Datacenter name is not valid, expected format $LOCATION-$DATACENTER, but got: %s", datacenter.(string))
-		}
-
-		locationName := parts[0]
-		opts.Location = locationName
+	if !data.AutoDelete.IsUnknown() && !data.AutoDelete.IsNull() {
+		opts.AutoDelete = data.AutoDelete.ValueBoolPointer()
 	}
 
-	if labels, ok := d.GetOk("labels"); ok {
-		tmpLabels := make(map[string]string)
-		for k, v := range labels.(map[string]interface{}) {
-			tmpLabels[k] = v.(string)
-		}
-		opts.Labels = tmpLabels
+	resp.Diagnostics.Append(hcloudutil.TerraformLabelsToHCloud(ctx, data.Labels, &opts.Labels)...)
+
+	switch {
+	case !data.Location.IsUnknown() && !data.Location.IsNull():
+		opts.Location = data.Location.ValueString()
+	case !data.AssigneeID.IsUnknown() && !data.AssigneeID.IsNull():
+		opts.AssigneeID = data.AssigneeID.ValueInt64Pointer()
+		opts.AssigneeType = data.AssigneeType.ValueString()
 	}
 
-	res, _, err := client.PrimaryIP.Create(ctx, opts)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Create in API
+	result, _, err := r.client.PrimaryIP.Create(ctx, opts)
 	if err != nil {
-		return hcloudutil.ErrorToDiag(err)
+		resp.Diagnostics.Append(hcloudutil.APIErrorDiagnostics(err)...)
+		return
 	}
 
-	d.SetId(util.FormatID(res.PrimaryIP.ID))
-	if err = client.Action.WaitFor(ctx, res.Action); err != nil {
-		return hcloudutil.ErrorToDiag(err)
+	// Make sure to save the ID immediately so we can recover if the process stops after
+	// this call. Terraform marks the resource as "tainted", so it can be deleted and no
+	// surprise "duplicate resource" errors happen.
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), types.Int64Value(result.PrimaryIP.ID))...)
+
+	resp.Diagnostics.Append(hcloudutil.SettleActions(ctx, &r.client.Action, result.Action)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	deleteProtection := d.Get("delete_protection").(bool)
-	if deleteProtection {
-		if err := setProtection(ctx, client, res.PrimaryIP, deleteProtection); err != nil {
-			return hcloudutil.ErrorToDiag(err)
-		}
-	}
-
-	return resourcePrimaryIPRead(ctx, d, m)
-}
-
-func resourcePrimaryIPRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	client := m.(*hcloud.Client)
-
-	id, err := util.ParseID(d.Id())
-	if err != nil {
-		log.Printf("[WARN] invalid Primary IP id (%s), removing from state: %v", d.Id(), err)
-		d.SetId("")
-		return nil
-	}
-
-	primaryIP, _, err := client.PrimaryIP.GetByID(ctx, id)
-	if err != nil {
-		return hcloudutil.ErrorToDiag(err)
-	}
-	if primaryIP == nil {
-		log.Printf("[WARN] Primary IP (%s) not found, removing from state", d.Id())
-		d.SetId("")
-		return nil
-	}
-
-	setPrimaryIPSchema(d, primaryIP)
-	return nil
-}
-
-func resourcePrimaryIPUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	client := m.(*hcloud.Client)
-
-	id, err := util.ParseID(d.Id())
-	if err != nil {
-		log.Printf("[WARN] invalid Primary IP id (%s), removing from state: %v", d.Id(), err)
-		d.SetId("")
-		return nil
-	}
-	primaryIP := &hcloud.PrimaryIP{ID: id}
-
-	d.Partial(true)
-
-	if d.HasChange("name") {
-		name := d.Get("name").(string)
-		_, _, err := client.PrimaryIP.Update(ctx, primaryIP, hcloud.PrimaryIPUpdateOpts{
-			Name: name,
+	if !data.DeleteProtection.IsUnknown() && !data.DeleteProtection.IsNull() && data.DeleteProtection.ValueBool() {
+		action, _, err := r.client.PrimaryIP.ChangeProtection(ctx, hcloud.PrimaryIPChangeProtectionOpts{
+			ID:     result.PrimaryIP.ID,
+			Delete: data.DeleteProtection.ValueBool(),
 		})
 		if err != nil {
-			if resourcePrimaryIPIsNotFound(err, d) {
-				return nil
-			}
-			return hcloudutil.ErrorToDiag(err)
+			resp.Diagnostics.Append(hcloudutil.APIErrorDiagnostics(err)...)
+			return
+		}
+
+		resp.Diagnostics.Append(hcloudutil.SettleActions(ctx, &r.client.Action, action)...)
+		if resp.Diagnostics.HasError() {
+			return
 		}
 	}
 
-	if d.HasChange("auto_delete") {
-		autoDelete := d.Get("auto_delete").(bool)
-		_, _, err := client.PrimaryIP.Update(ctx, primaryIP, hcloud.PrimaryIPUpdateOpts{
-			AutoDelete: hcloud.Ptr(autoDelete),
-		})
-		if err != nil {
-			if resourcePrimaryIPIsNotFound(err, d) {
-				return nil
-			}
-			return hcloudutil.ErrorToDiag(err)
-		}
-	}
-
-	if d.HasChange("assignee_id") {
-		serverID := util.CastInt64(d.Get("assignee_id"))
-		if serverID == 0 {
-			if err := UnassignPrimaryIP(ctx, client, primaryIP.ID); err != nil {
-				return err
-			}
-		} else {
-			if err := UnassignPrimaryIP(ctx, client, primaryIP.ID); err != nil {
-				return err
-			}
-			if err := AssignPrimaryIP(ctx, client, primaryIP.ID, serverID); err != nil {
-				return err
-			}
-		}
-	}
-	if d.HasChange("labels") {
-		labels := d.Get("labels")
-		tmpLabels := make(map[string]string)
-		for k, v := range labels.(map[string]interface{}) {
-			tmpLabels[k] = v.(string)
-		}
-		_, _, err := client.PrimaryIP.Update(ctx, primaryIP, hcloud.PrimaryIPUpdateOpts{
-			Labels: &tmpLabels,
-		})
-		if err != nil {
-			if resourcePrimaryIPIsNotFound(err, d) {
-				return nil
-			}
-			return hcloudutil.ErrorToDiag(err)
-		}
-	}
-
-	if d.HasChange("delete_protection") {
-		deletionProtection := d.Get("delete_protection").(bool)
-		if err := setProtection(ctx, client, primaryIP, deletionProtection); err != nil {
-			return hcloudutil.ErrorToDiag(err)
-		}
-	}
-
-	d.Partial(false)
-
-	return resourcePrimaryIPRead(ctx, d, m)
-}
-
-func resourcePrimaryIPDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	client := m.(*hcloud.Client)
-
-	primaryIPID, err := util.ParseID(d.Id())
+	// Fetch fresh data from the API
+	in, _, err := r.client.PrimaryIP.GetByID(ctx, result.PrimaryIP.ID)
 	if err != nil {
-		log.Printf("[WARN] invalid Primary IP id (%s), removing from state: %v", d.Id(), err)
-		d.SetId("")
-		return nil
+		resp.Diagnostics.Append(hcloudutil.APIErrorDiagnostics(err)...)
+		return
 	}
 
-	if assigneeIDI, ok := d.GetOk("assignee_id"); ok && util.CastInt64(assigneeIDI) != 0 {
-		assigneeID := util.CastInt64(assigneeIDI)
-
-		if server, _, err := client.Server.GetByID(ctx, assigneeID); err == nil && server != nil {
-			// The server does not have this primary ip assigned anymore, no need to try to detach it before deleting
-			// Workaround for https://github.com/hashicorp/terraform/issues/35568
-			if server.PublicNet.IPv4.ID == assigneeID || server.PublicNet.IPv6.ID == assigneeID {
-				offAction, _, _ := client.Server.Poweroff(ctx, server)
-				// if offErr != nil {
-				// 	return hcloudutil.ErrorToDiag(offErr)
-				// }
-				if offActionErr := client.Action.WaitFor(ctx, offAction); offActionErr != nil {
-					return hcloudutil.ErrorToDiag(offActionErr)
-				}
-				// dont catch error, because its possible that the primary IP got already unassigned on server destroy
-				UnassignPrimaryIP(ctx, client, primaryIPID)
-
-				onAction, _, _ := client.Server.Poweron(ctx, server)
-				// if onErr != nil {
-				// 	return hcloudutil.ErrorToDiag(onErr)
-				// }
-				if onActionErr := client.Action.WaitFor(ctx, onAction); onActionErr != nil {
-					return hcloudutil.ErrorToDiag(onActionErr)
-				}
-			}
-		}
+	resp.Diagnostics.Append(data.FromAPI(ctx, in)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
-	err = control.Retry(2*control.DefaultRetries, func() error {
-		if _, err := client.PrimaryIP.Delete(ctx, &hcloud.PrimaryIP{ID: primaryIPID}); err != nil {
-			if hcloud.IsError(err, hcloud.ErrorCodeNotFound) {
-				// Primary IP was already deleted
-				return nil
-			}
-			if hcloud.IsError(err, hcloud.ErrorCodeProtected) {
-				// Primary IP is delete protected
-				return control.AbortRetry(err)
-			}
-		}
-		return err
-	})
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+func (r *Resource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
+	var data model
+
+	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	in, _, err := r.client.PrimaryIP.GetByID(ctx, data.ID.ValueInt64())
 	if err != nil {
-		return hcloudutil.ErrorToDiag(err)
+		resp.Diagnostics.Append(hcloudutil.APIErrorDiagnostics(err)...)
+		return
 	}
 
-	return nil
+	if in == nil {
+		resp.State.RemoveResource(ctx)
+		return
+	}
+
+	resp.Diagnostics.Append(data.FromAPI(ctx, in)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
-func resourcePrimaryIPIsNotFound(err error, d *schema.ResourceData) bool {
-	if hcloud.IsError(err, hcloud.ErrorCodeNotFound) {
-		log.Printf("[WARN] Primary IP (%s) not found, removing from state", d.Id())
-		d.SetId("")
-		return true
-	}
-	return false
-}
+func (r *Resource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	var data, plan model
 
-func setPrimaryIPSchema(d *schema.ResourceData, f *hcloud.PrimaryIP) {
-	util.SetSchemaFromAttributes(d, getPrimaryIPAttributes(f))
-}
-
-func getPrimaryIPAttributes(f *hcloud.PrimaryIP) map[string]interface{} {
-	res := map[string]interface{}{
-		"id":                f.ID,
-		"ip_address":        f.IP.String(),
-		"assignee_id":       f.AssigneeID,
-		"assignee_type":     f.AssigneeType,
-		"name":              f.Name,
-		"type":              f.Type,
-		"location":          f.Location.Name,
-		"labels":            f.Labels,
-		"delete_protection": f.Protection.Delete,
-		"auto_delete":       f.AutoDelete,
+	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
-	if f.Type == hcloud.PrimaryIPTypeIPv6 {
-		res["ip_network"] = f.Network.String()
-	}
+	primaryIP := &hcloud.PrimaryIP{ID: data.ID.ValueInt64()}
 
-	// Pass through datacenter name as long as it is returned from the API.
-	//
-	// If the attribute is not returned from the API, we never set the attribute,
-	// so whatever is in the state or user config is kept.
-	//
-	// See https://docs.hetzner.cloud/changelog#2025-12-16-phasing-out-datacenters
-	//nolint:staticcheck // Backwards-compatibility
-	if f.Datacenter != nil {
-		//nolint:staticcheck // Backwards-compatibility
-		res["datacenter"] = f.Datacenter.Name
-	}
-
-	return res
-}
-
-func setProtection(ctx context.Context, c *hcloud.Client, primaryIP *hcloud.PrimaryIP, deleteProtection bool) error {
-	action, _, err := c.PrimaryIP.ChangeProtection(ctx,
-		hcloud.PrimaryIPChangeProtectionOpts{
+	// Action: Delete Protection
+	if !plan.DeleteProtection.IsUnknown() && !plan.DeleteProtection.Equal(data.DeleteProtection) {
+		action, _, err := r.client.PrimaryIP.ChangeProtection(ctx, hcloud.PrimaryIPChangeProtectionOpts{
 			ID:     primaryIP.ID,
-			Delete: deleteProtection,
-		},
-	)
+			Delete: plan.DeleteProtection.ValueBool(),
+		})
+		if err != nil {
+			resp.Diagnostics.Append(hcloudutil.APIErrorDiagnostics(err)...)
+			return
+		}
+
+		resp.Diagnostics.Append(hcloudutil.SettleActions(ctx, &r.client.Action, action)...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+	}
+
+	// Action: Assignee ID
+	if (!plan.AssigneeID.IsUnknown() && !plan.AssigneeID.Equal(data.AssigneeID)) ||
+		(!plan.AssigneeType.IsUnknown() && !plan.AssigneeType.Equal(data.AssigneeType)) {
+
+		// The outer condition guarantees the assignee changed. Unassign the old
+		// assignee first (if any), then assign the new one (if any).
+		if data.AssigneeID.ValueInt64() != 0 {
+			action, _, err := r.client.PrimaryIP.Unassign(ctx, primaryIP.ID)
+			if err != nil {
+				resp.Diagnostics.Append(hcloudutil.APIErrorDiagnostics(err)...)
+				return
+			}
+
+			resp.Diagnostics.Append(hcloudutil.SettleActions(ctx, &r.client.Action, action)...)
+			if resp.Diagnostics.HasError() {
+				return
+			}
+		}
+
+		if plan.AssigneeID.ValueInt64() != 0 {
+			action, _, err := r.client.PrimaryIP.Assign(ctx, hcloud.PrimaryIPAssignOpts{
+				ID:           primaryIP.ID,
+				AssigneeID:   plan.AssigneeID.ValueInt64(),
+				AssigneeType: plan.AssigneeType.ValueString(),
+			})
+			if err != nil {
+				resp.Diagnostics.Append(hcloudutil.APIErrorDiagnostics(err)...)
+				return
+			}
+
+			resp.Diagnostics.Append(hcloudutil.SettleActions(ctx, &r.client.Action, action)...)
+			if resp.Diagnostics.HasError() {
+				return
+			}
+		}
+	}
+
+	// Update fields on resource
+	opts := hcloud.PrimaryIPUpdateOpts{}
+
+	if !plan.Name.IsUnknown() && !plan.Name.Equal(data.Name) {
+		opts.Name = plan.Name.ValueString()
+	}
+
+	if !plan.Labels.IsUnknown() && !plan.Labels.Equal(data.Labels) {
+		// Primary IPs labels are weird, opts.Labels is a pointer to a map.
+		var labels map[string]string
+		resp.Diagnostics.Append(hcloudutil.TerraformLabelsToHCloud(ctx, plan.Labels, &labels)...)
+		opts.Labels = &labels
+	}
+
+	if !plan.AutoDelete.IsUnknown() && !plan.AutoDelete.Equal(data.AutoDelete) {
+		opts.AutoDelete = plan.AutoDelete.ValueBoolPointer()
+	}
+
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Always perform the update call last, even when empty, to populate the state with fresh data returned by
+	// the update.
+	in, _, err := r.client.PrimaryIP.Update(ctx, primaryIP, opts)
 	if err != nil {
+		resp.Diagnostics.Append(hcloudutil.APIErrorDiagnostics(err)...)
+		return
+	}
+
+	// Write data to state
+	resp.Diagnostics.Append(data.FromAPI(ctx, in)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+}
+
+func (r *Resource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
+	var data model
+
+	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	primaryIP := &hcloud.PrimaryIP{ID: data.ID.ValueInt64()}
+
+	// Unassign Primary IP before deletion
+	if data.AssigneeID.ValueInt64() != 0 {
+		switch data.AssigneeType.ValueString() {
+		case "server":
+			server, _, err := r.client.Server.GetByID(ctx, data.AssigneeID.ValueInt64())
+			if err == nil && server != nil {
+				// The server does not have this primary ip assigned anymore, no need to try to detach it before deleting
+				// Workaround for https://github.com/hashicorp/terraform/issues/35568
+				if server.PublicNet.IPv4.ID == primaryIP.ID ||
+					server.PublicNet.IPv6.ID == primaryIP.ID {
+
+					{ // Power off
+						action, _, _ := r.client.Server.Poweroff(ctx, server)
+						// No error handling
+
+						resp.Diagnostics.Append(hcloudutil.SettleActions(ctx, &r.client.Action, action)...)
+						if resp.Diagnostics.HasError() {
+							return
+						}
+					}
+					{ // Unassign
+						action, _, _ := r.client.PrimaryIP.Unassign(ctx, primaryIP.ID)
+						// No error handling, because its possible that the primary IP got
+						// already unassigned on server destroy
+
+						resp.Diagnostics.Append(hcloudutil.SettleActions(ctx, &r.client.Action, action)...)
+						if resp.Diagnostics.HasError() {
+							return
+						}
+					}
+					{ // Power on
+						action, _, _ := r.client.Server.Poweron(ctx, server)
+						// No error handling
+
+						resp.Diagnostics.Append(hcloudutil.SettleActions(ctx, &r.client.Action, action)...)
+						if resp.Diagnostics.HasError() {
+							return
+						}
+					}
+				}
+			}
+		default:
+			action, _, _ := r.client.PrimaryIP.Unassign(ctx, primaryIP.ID)
+			// No error handling, because it could already be unassigned from elsewhere
+
+			resp.Diagnostics.Append(hcloudutil.SettleActions(ctx, &r.client.Action, action)...)
+			if resp.Diagnostics.HasError() {
+				return
+			}
+		}
+	}
+
+	err := control.Retry(2*control.DefaultRetries, func() error {
+		_, err := r.client.PrimaryIP.Delete(ctx, primaryIP)
+		if hcloud.IsError(err, hcloud.ErrorCodeNotFound) {
+			// Primary IP was already deleted
+			return nil
+		}
+		if hcloud.IsError(err, hcloud.ErrorCodeProtected) {
+			// Primary IP is delete protected
+			return control.AbortRetry(err)
+		}
 		return err
-	}
-
-	return c.Action.WaitFor(ctx, action)
-}
-
-func AssignPrimaryIP(ctx context.Context, c *hcloud.Client, primaryIPID int64, serverID int64) diag.Diagnostics {
-	action, _, err := c.PrimaryIP.Assign(ctx, hcloud.PrimaryIPAssignOpts{
-		ID:           primaryIPID,
-		AssigneeID:   serverID,
-		AssigneeType: "server",
 	})
 	if err != nil {
-		return hcloudutil.ErrorToDiag(err)
+		resp.Diagnostics.Append(hcloudutil.APIErrorDiagnostics(err)...)
+		return
 	}
-	if err = c.Action.WaitFor(ctx, action); err != nil {
-		return hcloudutil.ErrorToDiag(err)
-	}
-	return nil
 }
 
-func UnassignPrimaryIP(ctx context.Context, c *hcloud.Client, v int64) diag.Diagnostics {
-	action, _, err := c.PrimaryIP.Unassign(ctx, v)
+func (r *Resource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
+	id, err := strconv.ParseInt(req.ID, 10, 64)
 	if err != nil {
-		return hcloudutil.ErrorToDiag(err)
-	}
-	if err = c.Action.WaitFor(ctx, action); err != nil {
-		return hcloudutil.ErrorToDiag(err)
-	}
-	return nil
-}
-
-func DeletePrimaryIP(ctx context.Context, c *hcloud.Client, p *hcloud.PrimaryIP) diag.Diagnostics {
-	_, err := c.PrimaryIP.Delete(ctx, p)
-	if err != nil {
-		return hcloudutil.ErrorToDiag(err)
-	}
-	return nil
-}
-
-func CreateRandomPrimaryIP(ctx context.Context, c *hcloud.Client, server *hcloud.Server, ipType hcloud.PrimaryIPType) diag.Diagnostics {
-	create, _, err := c.PrimaryIP.Create(ctx, hcloud.PrimaryIPCreateOpts{
-		Name:         "primary_ip-" + strconv.Itoa(randomNumberBetween(1000000, 9999999)),
-		AssigneeID:   &server.ID,
-		AssigneeType: "server",
-		AutoDelete:   hcloud.Ptr(true),
-		Type:         ipType,
-	})
-	if err != nil {
-		return hcloudutil.ErrorToDiag(err)
+		resp.Diagnostics.Append(util.InvalidImportID("$PRIMARY_IP_ID", req.ID))
+		return
 	}
 
-	if err = c.Action.WaitFor(ctx, create.Action); err != nil {
-		return hcloudutil.ErrorToDiag(err)
-	}
-
-	return nil
-}
-
-func randomNumberBetween(low, hi int) int {
-	return low + rand.Intn(hi-low) // nolint: gosec
+	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), id)...)
 }
