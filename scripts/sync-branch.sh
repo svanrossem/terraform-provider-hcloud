@@ -57,7 +57,7 @@ if ! git merge "$source_ref" --no-edit; then
     echo 'git checkout main && git pull'
     echo "git merge $source_ref"
     echo '```'
-  } >"$conflict_body"
+  } > "$conflict_body"
 
   gh issue create --title "$issue_title" --body-file "$conflict_body"
   exit 0

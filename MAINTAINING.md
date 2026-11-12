@@ -58,8 +58,8 @@ On first run (no fork tags exist yet), it only bootstraps from the latest
 upstream tag rather than backfilling this fork's entire release history.
 
 The merge commit is also pushed to a rolling `fork-release` branch so
-it's inspectable on GitHub, but that branch is force-pushed on every run
-- only the tags are permanent. A merge conflict opens an issue instead of
+it's inspectable on GitHub, but that branch is force-pushed on every run;
+only the tags are permanent. A merge conflict opens an issue instead of
 failing silently, assigned to GitHub Copilot coding agent (`@copilot`) so
 it can attempt the resolution on its own; otherwise resolve it manually
 per the issue's instructions.
@@ -76,8 +76,8 @@ there if that changes.
 Fork tags reuse the exact upstream tag name they're built from, e.g.
 upstream `v1.69.0` becomes fork `v1.69.0` too. This is safe because the
 two live in different repos and are published under different Terraform
-Registry provider addresses (`hetznercloud/hcloud` vs. `svanrossem/hcloud`)
-- there's no registry or tooling that would ever compare them directly,
+Registry provider addresses (`hetznercloud/hcloud` vs. `svanrossem/hcloud`);
+there's no registry or tooling that would ever compare them directly,
 even though the commits (and therefore checksums) differ.
 
 The trade-off: because the name alone doesn't distinguish "the fork's

@@ -258,11 +258,11 @@ func (a *rebuildAction) Invoke(ctx context.Context, req action.InvokeRequest, re
 		opts.UserData = &ud
 	}
 
-	apiAction, _, err := a.client.Server.Rebuild(ctx, server, opts)
+	result, _, err := a.client.Server.RebuildWithResult(ctx, server, opts)
 	if err != nil {
 		resp.Diagnostics.Append(hcloudutil.APIErrorDiagnostics(err)...)
 		return
 	}
 
-	resp.Diagnostics.Append(hcloudutil.SettleActions(ctx, &a.client.Action, apiAction)...)
+	resp.Diagnostics.Append(hcloudutil.SettleActions(ctx, &a.client.Action, result.Action)...)
 }
